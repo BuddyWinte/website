@@ -1,4 +1,4 @@
-import { isRecord } from "../helpers/guards.ts";
+import { isRecord } from "../helpers.ts";
 import {
     DEF_WIN_H,
     DEF_WIN_W,
