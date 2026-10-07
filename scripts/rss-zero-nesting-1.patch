@@ -1,0 +1,163 @@
+--- a/src/rss.tsx
++++ b/src/rss.tsx
+@@ -620,21 +620,23 @@
+     let node = walker.nextNode();
+ 
+     while (node) {
+-        if (node instanceof Comment) {
+-            const raw = node.data.trim();
+-
+-            if (raw.startsWith(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX)) {
+-                const colour = normBQAcc(
+-                    raw.slice(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX.length)
+-                );
+-
+-                node.remove();
++        if (!(node instanceof Comment)) {
++            node = walker.nextNode();
++            continue;
++        }
+ 
+-                return colour;
+-            }
++        const raw = node.data.trim();
++        if (!raw.startsWith(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX)) {
++            node = walker.nextNode();
++            continue;
+         }
+ 
+-        node = walker.nextNode();
++        const colour = normBQAcc(
++            raw.slice(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX.length)
++        );
++
++        node.remove();
++        return colour;
+     }
+ 
+     return null;
+@@ -876,14 +878,17 @@
+ function syncExternalCodeLayout(pstDiv: HTMLElement, code: HTMLElement): void {
+     const frame = code.closest(".rss-code-frame");
+ 
+-    if (frame instanceof HTMLDivElement) {
+-        updCodeBar(frame, code);
++    if (!(frame instanceof HTMLDivElement)) {
++        qPstHgt(pstDiv);
++        return;
++    }
+ 
+-        if (frame.dataset.rssCodeGroup === "1" && code.closest(".rss-code-variant.is-active")) {
+-            frame.dataset.language = getCodeLang(code);
+-            frame.dataset.rssCodeActiveLang = normCodeLangKey(getCodeLang(code));
+-            qCodeGroupLayout(frame);
+-        }
++    updCodeBar(frame, code);
++
++    if (frame.dataset.rssCodeGroup === "1" && code.closest(".rss-code-variant.is-active")) {
++        frame.dataset.language = getCodeLang(code);
++        frame.dataset.rssCodeActiveLang = normCodeLangKey(getCodeLang(code));
++        qCodeGroupLayout(frame);
+     }
+ 
+     qPstHgt(pstDiv);
+@@ -2385,11 +2390,11 @@
+ function hdlSumPillClick(pill: HTMLElement): void {
+     const kind = pill.dataset.rssFilterSummaryKind as FiltSumKnd | undefined;
+ 
+-    if (kind === "author") {
+-        const ath = pill.dataset.rssFilterSummaryAuthor;
+-        if (!ath) return;
++    const ath = pill.dataset.rssFilterSummaryAuthor;
++    if (kind === "author" && !ath) return;
+ 
+-        authorOff.add(ath);
++    if (kind === "author") {
++        authorOff.add(ath as string);
+         repaintFiltersAndBlog();
+         return;
+     }
+@@ -2638,16 +2643,18 @@
+ function ensFiltShell(cal: HTMLDivElement): HTMLDivElement {
+     const current = cal.closest(".rss-filters");
+ 
+-    if (current instanceof HTMLDivElement) {
+-        const inner = current.querySelector(".rss-filters__body-inner");
+-
+-        if (inner instanceof HTMLDivElement) {
+-            if (!inner.contains(cal)) inner.prepend(cal);
++    const inner = current instanceof HTMLDivElement
++        ? current.querySelector(".rss-filters__body-inner")
++        : null;
++
++    if (inner instanceof HTMLDivElement && !inner.contains(cal)) {
++        inner.prepend(cal);
++    }
+ 
+-            wireFilt(current);
+-            syncFiltSum(current);
+-            return inner;
+-        }
++    if (current instanceof HTMLDivElement && inner instanceof HTMLDivElement) {
++        wireFilt(current);
++        syncFiltSum(current);
++        return inner;
+     }
+ 
+     const parent = cal.parentElement;
+@@ -2717,14 +2724,29 @@
+  * Finds/makes the blog shell, fragile-ish.
+  * @returns {WrapRs | null}
+  */
++function cleanExistingBlogContainers(
++    wrap: HTMLElement,
++    scroll: HTMLDivElement
++): void {
++    for (const child of Array.from(wrap.children)) {
++        if (child === scroll) continue;
++        if (!child.classList.contains("blog-container")) continue;
++        wrap.removeChild(child);
++    }
++}
++
+ function ensBlogWrap(): WrapRs | null {
+-    if (isDirectRssPth()) {
+-        const box = document.querySelector(".blog-container");
+-        if (!(box instanceof HTMLDivElement)) return null;
++    const direct = isDirectRssPth();
++    const directBox = direct
++        ? document.querySelector(".blog-container")
++        : null;
+ 
++    if (direct && !(directBox instanceof HTMLDivElement)) return null;
++
++    if (direct && directBox instanceof HTMLDivElement) {
+         return {
+             scr: null,
+-            box,
++            box: directBox,
+             cal: isBlogPth() ? ensCalSlot() : null
+         };
+     }
+@@ -2747,19 +2769,12 @@
+         nxt.appendChild(box);
+         scr = nxt;
+ 
+-        Array.from(wrap.children).forEach((chd) => {
+-            if (chd === scr) return;
+-            if (!(chd instanceof Element)) return;
+-            if (!chd.classList.contains("blog-container")) return;
+-
+-            wrap.removeChild(chd);
+-        });
++        cleanExistingBlogContainers(wrap, nxt);
+ 
+         const hdr = wrap.querySelector(".comments-header");
+         const aft = hdr?.nextSibling ?? null;
+ 
+-        if (aft) wrap.insertBefore(scr, aft);
+-        else wrap.appendChild(scr);
++        aft ? wrap.insertBefore(nxt, aft) : wrap.appendChild(nxt);
+     }
+ 
+     if (!scr.contains(box)) scr.appendChild(box);
