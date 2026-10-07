@@ -68,6 +68,27 @@ const READER_TOGGLE_ICON_SPEC = {
 	svgClass: "theme-toggle-button__svg"
 } as const;
 
+async function waitForReaderToggle(
+    current: HTMLElement | null
+): Promise<HTMLButtonElement | null> {
+    if (current instanceof HTMLButtonElement) return current;
+
+    return new Promise<HTMLButtonElement>((resolve) => {
+        const observer = new MutationObserver(() => {
+            const element = document.getElementById("reader-toggle");
+            if (!(element instanceof HTMLButtonElement)) return;
+
+            observer.disconnect();
+            resolve(element);
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    });
+}
+
 class ReaderToggle {
 	readerActive: boolean = false;
 	originalNodeClone: Node | null = null;
@@ -96,20 +117,9 @@ class ReaderToggle {
 			await helpers.waitForDomReady();
 		}
 
-		let readerToggle = document.getElementById("reader-toggle");
-
-		if (!(readerToggle instanceof HTMLButtonElement)) {
-			readerToggle = await new Promise<HTMLButtonElement>((resolve) => {
-				const observer = new MutationObserver(() => {
-					const el = document.getElementById("reader-toggle");
-					if (!(el instanceof HTMLButtonElement)) return;
-					observer.disconnect();
-					resolve(el);
-				});
-
-				observer.observe(document.body, { childList: true, subtree: true });
-			});
-		}
+		const readerToggle = await waitForReaderToggle(
+			document.getElementById("reader-toggle")
+		);
 
 		if (!(readerToggle instanceof HTMLButtonElement)) return false;
 
@@ -325,12 +335,12 @@ class ReaderToggle {
 
 		for (const target of targets) {
 			for (const entry of this.resolveSheetTarget(target)) {
-				if (entry.kind === "dom") {
-					if (domSeen.has(entry.sheet)) continue;
-					domSeen.add(entry.sheet);
-					collected.push(entry);
-					continue;
-				}
+				const isDomSheet = entry.kind === "dom";
+
+				if (isDomSheet && domSeen.has(entry.sheet)) continue;
+				if (isDomSheet) domSeen.add(entry.sheet);
+				if (isDomSheet) collected.push(entry);
+				if (isDomSheet) continue;
 
 				const importKey = `${entry.ownerSheet.href || "inline"}::${entry.index}::${entry.cssText}`;
 				if (importSeen.has(importKey)) continue;
@@ -585,14 +595,22 @@ class ReaderToggle {
 			}
 
 			const translationAttr = (contentEl.getAttribute("translation") || "").trim().toLowerCase();
-			if (translationAttr === "true") {
-				const nodes = Array.from(contentEl.childNodes);
-				if (nodes.length === 0 || (contentEl.textContent || "").trim() === "") {
-					tooltip.remove();
-					continue;
-				}
+			const isTranslation = translationAttr === "true";
+			const nodes = isTranslation
+				? Array.from(contentEl.childNodes)
+				: [];
+			const emptyTranslation =
+				isTranslation &&
+				(nodes.length === 0 || (contentEl.textContent || "").trim() === "");
 
+			if (emptyTranslation) {
+				tooltip.remove();
+				continue;
+			}
+
+			if (isTranslation) {
 				const frag = doc.createDocumentFragment();
+
 				for (const n of nodes) {
 					frag.appendChild(n.cloneNode(true));
 				}

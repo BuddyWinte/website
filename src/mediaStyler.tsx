@@ -493,7 +493,9 @@ async function replSvgs(root: Document | Element | string = document): Promise<v
         const wrapper = document.createElement("div");
         wrapper.innerHTML = root;
         doneRoot = wrapper;
-    } else if (root instanceof Document || root instanceof Element) {
+    }
+
+    if (root instanceof Document || root instanceof Element) {
         doneRoot = root;
     }
 

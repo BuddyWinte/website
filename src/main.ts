@@ -261,15 +261,18 @@ async function initUi(): Promise<void> {
         await initNtcs();
         await initNoticeBoard();
 
-        if (window.matchMedia) {
-            const mq = window.matchMedia("(prefers-color-scheme: dark)");
+        const onOsThemeChange = (e: MediaQueryListEvent): void => {
+            const osTheme: "dark" | "light" = e.matches ? "dark" : "light";
+            if (curTheme === osTheme) return;
+            applyTheme(osTheme, false);
+        };
 
-            mq.addEventListener("change", (e) => {
-                const osTheme: "dark" | "light" = e.matches ? "dark" : "light";
-                if (curTheme === osTheme) return;
+        const colourSchemeQuery = window.matchMedia
+            ? window.matchMedia("(prefers-color-scheme: dark)")
+            : null;
 
-                applyTheme(osTheme, false);
-            });
+        if (colourSchemeQuery) {
+            colourSchemeQuery.addEventListener("change", onOsThemeChange);
         }
 
         if (data.crtUi) {

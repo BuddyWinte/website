@@ -175,12 +175,11 @@ function hasTerminalInteracted(): boolean {
 
     const token = readSessionValue(sessionTokenKey);
 
-    if (marker === pendingInteractionValue) {
-        if (token) {
-            writeSessionValue(terminalInteractionKey, token);
-        }
-        return true;
+    if (marker === pendingInteractionValue && token) {
+        writeSessionValue(terminalInteractionKey, token);
     }
+
+    if (marker === pendingInteractionValue) return true;
 
     return !!token && marker === token;
 }
@@ -221,32 +220,34 @@ async function waitForTerminalTextarea(term: XtermTerminal): Promise<HTMLTextAre
 /**
  * @returns {Promise<boolean>} True if MobileDetect considers the UA mobile, else false.
  */
+async function loadMobileDetect(): Promise<void> {
+    const sources = [
+        "https://kittycrow.dev/external?src=https://cdn.jsdelivr.net/npm/mobile-detect@1.4.5/mobile-detect.js",
+        "https://cdn.jsdelivr.net/npm/mobile-detect@1.4.5/mobile-detect.js"
+    ];
+
+    for (const src of sources) {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        document.body.appendChild(script);
+
+        await new Promise<void>((resolve) => {
+            script.onload = () => resolve();
+            script.onerror = () => resolve();
+        });
+
+        if (window.MobileDetect) return;
+        script.remove();
+    }
+}
+
 async function checkMobile(): Promise<boolean> {
     while (document.readyState === "loading") {
         await helpers.nextFrame();
     }
 
-    if (!window.MobileDetect) {
-        const sources = [
-            "https://kittycrow.dev/external?src=https://cdn.jsdelivr.net/npm/mobile-detect@1.4.5/mobile-detect.js",
-            "https://cdn.jsdelivr.net/npm/mobile-detect@1.4.5/mobile-detect.js"
-        ];
-
-        for (const src of sources) {
-            const script = document.createElement("script");
-            script.src = src;
-            script.async = true;
-            document.body.appendChild(script);
-
-            await new Promise<void>((resolve) => {
-                script.onload = () => resolve();
-                script.onerror = () => resolve();
-            });
-
-            if (window.MobileDetect) break;
-            script.remove();
-        }
-    }
+    if (!window.MobileDetect) await loadMobileDetect();
 
     const Ctor = window.MobileDetect;
     if (!Ctor) return false;
@@ -600,20 +601,20 @@ async function attachWebSocketTransport(
     ws.addEventListener("close", (ev: CloseEvent) => {
         clearOpenTimer();
 
-        if (ev.code === 4001) {
+        const sessionEnded = ev.code === 4001;
+
+        if (sessionEnded) {
             dropSessionValue(sessionTokenKey);
             dropSessionValue(terminalInteractionKey);
             term.writeln("\r\n[session ended, reconnecting with a new token…]");
             scrollCtl.forceFollowAndScroll();
-
-            if (connectRef) {
-                window.setTimeout(() => {
-                    connectRef();
-                }, 0);
-            }
-
-            return;
         }
+
+        if (sessionEnded && connectRef) {
+            window.setTimeout(connectRef, 0);
+        }
+
+        if (sessionEnded) return;
 
         const normalClosure = ev.code === 1000;
         if (normalClosure) {

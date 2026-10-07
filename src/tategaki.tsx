@@ -30,6 +30,13 @@ function isPEl(element: Element): boolean {
  * @param {string} html
  * @returns {string[]}
  */
+function appendTextTokens(text: string, tokens: string[]): void {
+    for (const ch of Array.from(text)) {
+        if (!ch.trim()) continue;
+        tokens.push(ch);
+    }
+}
+
 function tokeniseLine(html: string): string[] {
     const container = document.createElement("div");
     container.innerHTML = html;
@@ -40,9 +47,7 @@ function tokeniseLine(html: string): string[] {
         if (isTextNode(node)) {
             const text = node.textContent || "";
 
-            for (const ch of Array.from(text)) {
-                if (ch.trim()) tokens.push(ch);
-            }
+            appendTextTokens(text, tokens);
 
             return;
         }

@@ -301,10 +301,15 @@ class JPExtended {
 
         if (children.length === 1 && children[0]?.nodeType === Node.TEXT_NODE) {
             const chars = ((children[0].textContent ?? "").trim()).split("").filter(Boolean);
-            if (chars.length === 2) {
-                return new ComposedKanji(chars[0] ?? "", chars[1] ?? "", layout, { xCompress: x, yCompress: y });
-            }
-            return chars.join("");
+
+            return chars.length === 2
+                ? new ComposedKanji(
+                    chars[0] ?? "",
+                    chars[1] ?? "",
+                    layout,
+                    { xCompress: x, yCompress: y }
+                )
+                : chars.join("");
         }
 
         if (children.length === 2) {
@@ -359,13 +364,15 @@ class JPExtended {
             let readingFound = false;
 
             for (const child of children) {
-                if (!readingFound && child.nodeType === Node.TEXT_NODE) {
-                    const t = (child.textContent ?? "").trim();
-                    if (t) {
-                        reading += t;
-                        readingFound = true;
-                        continue;
-                    }
+                const readingText =
+                    !readingFound && child.nodeType === Node.TEXT_NODE
+                        ? (child.textContent ?? "").trim()
+                        : "";
+
+                if (readingText) {
+                    reading += readingText;
+                    readingFound = true;
+                    continue;
                 }
 
                 if (child.nodeType === Node.TEXT_NODE) {

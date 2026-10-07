@@ -77,16 +77,17 @@ export function atchRssComments(pstDiv: HTMLElement): void {
         void ensRdy(slot).then(() => rndCmts(slot));
     };
 
+    const onToggleKeyDown = (ev: KeyboardEvent): void => {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        window.setTimeout(mayLoad, 360);
+    };
+
     if (tgl instanceof HTMLElement) {
         tgl.addEventListener("click", () => {
             window.setTimeout(mayLoad, 360);
         });
 
-        tgl.addEventListener("keydown", (ev) => {
-            if (ev.key !== "Enter" && ev.key !== " ") return;
-
-            window.setTimeout(mayLoad, 360);
-        });
+        tgl.addEventListener("keydown", onToggleKeyDown);
     }
 
     const postButton = slot.querySelector<HTMLElement>("[data-rss-comment-post]");

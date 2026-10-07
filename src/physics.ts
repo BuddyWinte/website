@@ -142,13 +142,10 @@ export function ensurePhysicsRuntime(): void {
       for (const node of addedNodes) {
         if (!(node instanceof Element)) continue;
 
-        if (node.matches(".phys-observe")) {
-          if (observer) {
-            observer.observe(node);
-          } else {
-            activate(node);
-          }
-        }
+        const shouldObserve = node.matches(".phys-observe");
+
+        if (shouldObserve && observer) observer.observe(node);
+        if (shouldObserve && !observer) activate(node);
 
         observeRoot(node, observer);
       }
