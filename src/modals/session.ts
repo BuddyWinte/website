@@ -1,10 +1,10 @@
 import * as winApi from "../window.ts";
 import * as helpers from "../helpers.ts";
-import type { ModalFactory } from "./modal.ts";
 import type {
     BubbleGeometry,
     Dec,
     DecCtx,
+    ModalFactorySessionHost,
     ModalMode,
     ModalPlacement,
     ModalPosition,
@@ -29,7 +29,7 @@ import {
 } from "./runtime.ts";
 
 type SessSpec = Readonly<{
-    factory: ModalFactory;
+    factory: ModalFactorySessionHost;
     id: string;
     mode: ModalMode;
 
@@ -57,7 +57,7 @@ type WinMx = Readonly<{
 }>;
 
 export class ModalSession {
-    readonly #fac: ModalFactory;
+    readonly #fac: ModalFactorySessionHost;
     readonly #key: string;
 
     readonly #id: string;
