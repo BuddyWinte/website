@@ -11,6 +11,8 @@ import * as helpers from "../helpers.ts";
 import type {
     ChaptersIndexResult,
     DebugApi,
+    ModalCtx,
+    ModalDecorator,
     ReaderButtonDef,
     ReaderButtons,
     RenderXmlDocOpts,
