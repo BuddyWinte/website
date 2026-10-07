@@ -90,3 +90,5 @@ source = source.replace(
 
 await writeFile(path, source, "utf8");
 console.log("[refactor-rss] extracted code-language and markdown preprocessing.");
+
+// retry after markdown module syntax fix
