@@ -64,4 +64,5 @@ jobs:
           path: |
             candidate/.build/esbuild-meta.json
             candidate/.build/esbuild-analysis.txt
+            candidate/src
           if-no-files-found: error
