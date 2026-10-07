@@ -7,6 +7,27 @@ import * as helpers from "./helpers.ts";
 import * as icons from "./icons.tsx";
 import { atchRssComments, initRssComments, mkRssCommentSlug } from "./rssComments.ts";
 import { transpileCodeSource } from "./transpiler.ts";
+import {
+    findByPstRef,
+    fmtDt,
+    getReqJumpId,
+    getReqPstRef,
+    mkPstDomRef,
+    mkPstSegShareUrl,
+    mkPstShareUrl,
+    mkPstShortId,
+    mkPstSlug,
+    mkPsts,
+    mkPstsRefs,
+    mkPstsSel,
+    prsRss
+} from "./rss/postModel.ts";
+import {
+    isBlogPth,
+    isDirectRssPth,
+    isResourcePth,
+    pstsForCurPage
+} from "./rss/routing.ts";
 
 declare global {
     namespace JSX {
@@ -21,130 +42,30 @@ declare const marked: {
     parse: (markdown: string) => string;
 };
 
-type HljsApi = Readonly<{
-    highlightElement: (el: HTMLElement) => void;
-}>;
+import type {
+    AthFilterCfg,
+    AthMenuRs,
+    AthOpt,
+    CodeGroupActiveOptions,
+    CodeTranspileLang,
+    CodeVariant,
+    ExternalCodeDirective,
+    ExternalCodeSpec,
+    FiltRs,
+    FiltSumKnd,
+    FiltSumPill,
+    HljsApi,
+    PillSnap,
+    Pst,
+    RssItm,
+    SegPoint,
+    SegRevealReq,
+    SegTapSnap,
+    WrapRs
+} from "./rss/types.ts";
 
 declare const hljs: HljsApi | undefined;
 
-type WrapRs = Readonly<{
-    scr: HTMLDivElement | null;
-    box: HTMLDivElement;
-    cal: HTMLDivElement | null;
-}>;
-
-type FiltRs = Readonly<{
-    shell: HTMLDivElement;
-    body: HTMLDivElement;
-    btn: HTMLButtonElement;
-    hdr: HTMLElement;
-}>;
-
-type AthMenuRs = Readonly<{
-    root: HTMLElement;
-    body: HTMLDivElement;
-    btn: HTMLButtonElement;
-    hdr: HTMLElement;
-}>;
-
-type RssItm = Readonly<{
-    title: string;
-    description: string;
-    content: string;
-    pubDate: string;
-    author: string;
-    guid: string;
-    postId: string;
-}>;
-
-type Pst = Readonly<{
-    ttl: string;
-    dsc: string;
-    cnt: string;
-    pub: string;
-    ath: string;
-    gid: string;
-    pid: string;
-    dt: Date;
-    yr: number;
-    mo: number;
-    dy: number;
-    res: boolean;
-}>;
-
-type AthOpt = Readonly<{
-    ath: string;
-    cnt: number;
-    on: boolean;
-}>;
-
-type AthFilterCfg = Readonly<{
-    defaultUnselect: ReadonlySet<string>;
-}>;
-
-type FiltSumKnd = "date" | "author";
-
-type FiltSumPill = Readonly<{
-    key: string;
-    kind: FiltSumKnd;
-    label: string;
-    lvl?: "yr" | "mo" | "dy";
-    val?: number;
-    author?: string;
-}>;
-
-type PillSnap = Readonly<{
-    key: string;
-    rect: DOMRect;
-    el: HTMLElement;
-}>;
-
-type CodeVariant = Readonly<{
-    pre: HTMLPreElement;
-    code: HTMLElement;
-    lang: string;
-    langKey: string;
-    label: string;
-}>;
-
-type CodeGroupActiveOptions = Readonly<{
-    savePreference?: boolean;
-    syncPeers?: boolean;
-}>;
-
-type CodeTranspileLang = "js" | "jsx" | "ts" | "tsx";
-
-type ExternalCodeDirective = Readonly<{
-    id: string;
-    lang: string;
-    sourceUrl: string;
-    transFrom: CodeTranspileLang | null;
-    placeholder: string;
-}>;
-
-type ExternalCodeSpec = Readonly<{
-    lang: string;
-    transFrom: CodeTranspileLang | null;
-}>;
-
-type SegPoint = Readonly<{
-    clientX: number;
-    clientY: number;
-}>;
-
-type SegTapSnap = Readonly<{
-    id: string;
-    at: number;
-}>;
-
-type SegRevealReq = Readonly<{
-    seg: HTMLElement;
-    point: SegPoint;
-}>;
-
-const RSS_POST_PARAM = "post";
-const RSS_JUMP_PARAM = "jumpto";
-const RSS_POST_SHARE_ID_LENGTH = 16;
 const RSS_SEG_ID_PREFIX = "rss-s-";
 const RSS_RESOURCE_TITLE_PREFIX = "${resource}";
 const RSS_CODE_PREF_STORAGE_KEY = "kittycrow:rss-code-language-preferences:v1";
@@ -196,67 +117,6 @@ let curCalSel: CalSel = {
     mos: new Set<number>(),
     dys: new Set<number>()
 };
-
-/**
- * blog page maybe.
- * @returns {boolean}
- */
-function isBlogPth(): boolean {
-    return window.location.pathname.toLowerCase().includes("blog");
-}
-
-/**
- * resources page maybe.
- * @returns {boolean}
- */
-function isResourcePth(): boolean {
-    return window.location.pathname.toLowerCase().includes("resources");
-}
-
-/**
- * Direct page path using the normal blog container.
- * @returns {boolean}
- */
-function isDirectRssPth(): boolean {
-    return isBlogPth() || isResourcePth();
-}
-
-/**
- * Resource post marker check.
- * @param {string} title
- * @returns {boolean}
- */
-function isResourceTitle(title: string): boolean {
-    return title.trimStart().startsWith(RSS_RESOURCE_TITLE_PREFIX);
-}
-
-/**
- * Removes the resource marker from a display title.
- * @param {string} title
- * @returns {string}
- */
-function stripResourceTitle(title: string): string {
-    const clean = title.trimStart();
-
-    if (!clean.startsWith(RSS_RESOURCE_TITLE_PREFIX)) {
-        return title;
-    }
-
-    return clean.slice(RSS_RESOURCE_TITLE_PREFIX.length).trimStart();
-}
-
-/**
- * Chooses the posts visible for this page.
- * @param {readonly Pst[]} psts
- * @returns {readonly Pst[]}
- */
-function pstsForCurPage(psts: readonly Pst[]): readonly Pst[] {
-    if (isResourcePth()) {
-        return psts.filter((pst) => pst.res);
-    }
-
-    return psts.filter((pst) => !pst.res);
-}
 
 /**
  * Existing selected date state.
@@ -2958,282 +2818,6 @@ function wireHvr(pstDiv: HTMLElement): void {
     tgl.addEventListener("blur", () => {
         pstDiv.classList.remove("is-rss-toggle-hovered");
     });
-}
-
-/**
- * Pulls txt from an rss child.
- * @param {Element} root
- * @param {string} tagName
- * @returns {string}
- */
-function rdItmTxt(root: Element, tagName: string): string {
-    const el = root.getElementsByTagName(tagName)[0];
-    return (el?.textContent ?? "").trim();
-}
-
-/**
- * Last hash bit, that is it.
- * @param {string} guid
- * @returns {string}
- */
-function pidFromGuid(guid: string): string {
-    const hashIx = guid.lastIndexOf("#");
-    if (hashIx < 0) return "";
-
-    return guid.slice(hashIx + 1).trim();
-}
-
-/**
- * Id clean up.
- * @param {string} postId
- * @returns {string}
- */
-function trimPid(postId: string): string {
-    return postId.trim().toLowerCase();
-}
-
-/**
- * Small id for links.
- * @param {string} postId
- * @returns {string}
- */
-function truncPid(postId: string): string {
-    const clean = trimPid(postId);
-    return clean.length > RSS_POST_SHARE_ID_LENGTH
-        ? clean.slice(0, RSS_POST_SHARE_ID_LENGTH)
-        : clean;
-}
-
-/**
- * Hex-ish post id maybe.
- * @param {string} value
- * @returns {boolean}
- */
-function isPidish(value: string): boolean {
-    return /^[a-f0-9]{16,64}$/i.test(value.trim());
-}
-
-/**
- * Rss xml into plain-ish items.
- * @param {string} xml
- * @returns {RssItm[]}
- */
-function prsRss(xml: string): RssItm[] {
-    const prs = new DOMParser();
-    const doc = prs.parseFromString(xml, "application/xml");
-
-    return Array.from(doc.querySelectorAll("item")).map((itm) => {
-        const cntTags = itm.getElementsByTagName("content:encoded");
-        const cnt = (cntTags.length ? (cntTags[0]?.textContent ?? "") : "").trim();
-        const guid = rdItmTxt(itm, "guid");
-        const postId = rdItmTxt(itm, "postId") || pidFromGuid(guid);
-
-        return {
-            title: rdItmTxt(itm, "title"),
-            description: rdItmTxt(itm, "description"),
-            content: cnt,
-            pubDate: rdItmTxt(itm, "pubDate"),
-            author: rdItmTxt(itm, "author") || "Kitty",
-            guid,
-            postId
-        };
-    });
-}
-
-/**
- * Date or dead date.
- * @param {string} pub
- * @returns {Date}
- */
-function mkDt(pub: string): Date {
-    const dt = new Date(pub);
-    return Number.isNaN(dt.getTime()) ? new Date(0) : dt;
-}
-
-/**
- * Rss to psts.
- * @param {RssItm[]} itms
- * @returns {Pst[]}
- */
-function mkPsts(itms: RssItm[]): Pst[] {
-    return itms
-        .map((itm) => {
-            const dt = mkDt(itm.pubDate);
-            const res = isResourceTitle(itm.title);
-
-            return {
-                ttl: res ? stripResourceTitle(itm.title) : itm.title,
-                dsc: itm.description,
-                cnt: itm.content,
-                pub: itm.pubDate,
-                ath: itm.author,
-                gid: itm.guid,
-                pid: itm.postId,
-                dt,
-                yr: dt.getFullYear(),
-                mo: dt.getMonth() + 1,
-                dy: dt.getDate(),
-                res
-            };
-        })
-        .sort((a, b) => b.dt.getTime() - a.dt.getTime());
-}
-
-/**
- * Date for ui.
- * @param {string} pub
- * @returns {string}
- */
-function fmtDt(pub: string): string {
-    const dt = mkDt(pub);
-    if (dt.getTime() === 0) return "";
-
-    const yr = dt.getFullYear();
-    const mo = String(dt.getMonth() + 1).padStart(2, "0");
-    const dy = String(dt.getDate()).padStart(2, "0");
-
-    return `${yr}.${mo}.${dy}`;
-}
-
-/**
- * Slug wrapper, yep.
- * @param {Pst} pst
- * @returns {string}
- */
-function mkPstSlug(pst: Pst): string {
-    return mkRssCommentSlug(pst);
-}
-
-/**
- * Full pid thing.
- * @param {Pst} pst
- * @returns {string}
- */
-function mkPstFullId(pst: Pst): string {
-    return trimPid(pst.pid);
-}
-
-/**
- * Shorter ref, unless missing.
- * @param {Pst} pst
- * @returns {string}
- */
-function mkPstShortId(pst: Pst): string {
-    const postId = mkPstFullId(pst);
-    return postId.length > 0 ? truncPid(postId) : mkPstSlug(pst);
-}
-
-/**
- * Dom ref atm.
- * @param {Pst} pst
- * @returns {string}
- */
-function mkPstDomRef(pst: Pst): string {
-    return mkPstShortId(pst);
-}
-
-/**
- * Share url n stuff.
- * @param {string} postRef
- * @returns {string}
- */
-function mkPstShareUrl(postRef: string): string {
-    const url = new URL(helpers.setUrlParam(RSS_POST_PARAM, postRef), window.location.href);
-
-    url.searchParams.delete(RSS_JUMP_PARAM);
-
-    return url.toString();
-}
-
-/**
- * Share url for one segment.
- * @param {string} postRef
- * @param {string} segId
- * @returns {string}
- */
-function mkPstSegShareUrl(postRef: string, segId: string): string {
-    const url = new URL(mkPstShareUrl(postRef), window.location.href);
-
-    url.searchParams.set(RSS_JUMP_PARAM, segId);
-
-    return url.toString();
-}
-
-/**
- * Url requested post, if any.
- * @returns {string | null}
- */
-function getReqPstRef(): string | null {
-    const postRef = helpers.getUrlParam(RSS_POST_PARAM);
-
-    return postRef && postRef.trim().length > 0 ? postRef.trim() : null;
-}
-
-/**
- * Url requested segment, if any.
- * @returns {string | null}
- */
-function getReqJumpId(): string | null {
-    const jumpId = helpers.getUrlParam(RSS_JUMP_PARAM);
-    const clean = jumpId?.trim() ?? "";
-
-    return /^rss-s-[a-f0-9]{8}$/i.test(clean) ? clean : null;
-}
-
-/**
- * Compares refs, bit fussy.
- * @param {Pst} pst
- * @param {string} postRef
- * @returns {boolean}
- */
-function mtchPstRef(pst: Pst, postRef: string): boolean {
-    const clean = postRef.trim();
-    if (clean.length === 0) return false;
-
-    const fullId = mkPstFullId(pst);
-    const shortId = mkPstShortId(pst);
-    const slug = mkPstSlug(pst);
-    const normalisedIdRef = trimPid(clean);
-
-    if (isPidish(clean)) {
-        return normalisedIdRef === fullId || normalisedIdRef === shortId;
-    }
-
-    return clean === slug || normalisedIdRef === fullId || normalisedIdRef === shortId;
-}
-
-/**
- * Find posts from url/ref thing.
- * @param {readonly Pst[]} psts
- * @param {string | null} postRef
- * @returns {readonly Pst[]}
- */
-function findByPstRef(psts: readonly Pst[], postRef: string | null): readonly Pst[] {
-    if (!postRef) return [];
-
-    return psts.filter((pst) => mtchPstRef(pst, postRef));
-}
-
-/**
- * Date selection from posts.
- * @param {readonly Pst[]} psts
- * @returns {CalSel}
- */
-function mkPstsSel(psts: readonly Pst[]): CalSel {
-    return {
-        yrs: new Set<number>(psts.map((pst) => pst.yr)),
-        mos: new Set<number>(psts.map((pst) => pst.mo)),
-        dys: new Set<number>(psts.map((pst) => pst.dy))
-    };
-}
-
-/**
- * Refs as set.
- * @param {readonly Pst[]} psts
- * @returns {ReadonlySet<string>}
- */
-function mkPstsRefs(psts: readonly Pst[]): ReadonlySet<string> {
-    return new Set<string>(psts.map((pst) => mkPstDomRef(pst)));
 }
 
 /**
