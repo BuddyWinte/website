@@ -86,22 +86,22 @@
 -
 -        if (inner instanceof HTMLDivElement) {
 -            if (!inner.contains(cal)) inner.prepend(cal);
-+    const inner = current instanceof HTMLDivElement
++    const existingInner = current instanceof HTMLDivElement
 +        ? current.querySelector(".rss-filters__body-inner")
 +        : null;
 +
-+    if (inner instanceof HTMLDivElement && !inner.contains(cal)) {
-+        inner.prepend(cal);
++    if (existingInner instanceof HTMLDivElement && !existingInner.contains(cal)) {
++        existingInner.prepend(cal);
 +    }
  
 -            wireFilt(current);
 -            syncFiltSum(current);
--            return inner;
+-            return existingInner;
 -        }
-+    if (current instanceof HTMLDivElement && inner instanceof HTMLDivElement) {
++    if (current instanceof HTMLDivElement && existingInner instanceof HTMLDivElement) {
 +        wireFilt(current);
 +        syncFiltSum(current);
-+        return inner;
++        return existingInner;
      }
  
      const parent = cal.parentElement;
