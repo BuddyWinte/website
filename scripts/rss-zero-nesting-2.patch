@@ -75,7 +75,7 @@
      const slot = document.createElement("div");
  
      slot.id = "kc-blog-author-filter";
-@@ -4483,13 +4498,12 @@
+@@ -4483,14 +4498,13 @@
  
          const menuBtn = trg.closest<HTMLButtonElement>("[data-rss-author-menu-tgl]");
  
@@ -90,9 +90,11 @@
 -            const root = menuBtn.closest(".rss-author-filter");
 -            if (!(root instanceof HTMLElement)) return;
 -
-             setAthOpn(menuRoot, menuRoot.dataset.rssAuthorOpen !== "1");
+-            setAthOpn(root, root.dataset.rssAuthorOpen !== "1");
++            setAthOpn(menuRoot, menuRoot.dataset.rssAuthorOpen !== "1");
              return;
          }
+ 
 @@ -4503,11 +4517,9 @@
              const aths = pstAths(datePsts(allPsts, curCalSel));
              const act = allBtn.dataset.rssAuthorAct;
