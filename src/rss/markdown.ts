@@ -92,7 +92,7 @@ function mkExternalCodeFence(
 ): string {
     return [
         `<!--${CODE_DIRECTIVE_COMMENT_PREFIX}${directive.id}-->`,
-        ````${directive.lang}`,
+        "```" + directive.lang,
         directive.placeholder,
         "```"
     ].join("\n");
