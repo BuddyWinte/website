@@ -77,6 +77,16 @@ for (const file of files) {
 
     for (const statement of source.statements) {
         if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
+
+        const isTypeOnlyImport =
+            ts.isImportDeclaration(statement) &&
+            statement.importClause?.isTypeOnly === true;
+
+        const isTypeOnlyExport =
+            ts.isExportDeclaration(statement) &&
+            statement.isTypeOnly === true;
+
+        if (isTypeOnlyImport || isTypeOnlyExport) continue;
         if (!statement.moduleSpecifier) continue;
         if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
 
