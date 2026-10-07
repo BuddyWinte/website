@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import { browserEntryNames } from "./build-entries.mts";
+import { browserEntryNames } from "./build-entries.mjs";
 
 const baselineRoot = resolve(process.argv[2] ?? ".baseline");
 const candidateRoot = process.cwd();
