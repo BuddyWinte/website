@@ -2,7 +2,9 @@ name: Validate
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "refactor/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -14,15 +16,52 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout candidate
+        uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           submodules: true
+          path: candidate
+
+      - name: Checkout refactor baseline
+        uses: actions/checkout@v6
+        with:
+          ref: c0c9c0d8b909d26694087d8de9639b397e285b25
+          submodules: true
+          path: baseline
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: candidate/package-lock.json
 
-      - run: npm ci
+      - name: Install candidate dependencies
+        run: npm ci
+        working-directory: candidate
 
-      - run: npm run validate
+      - name: Validate candidate
+        run: npm run validate
+        working-directory: candidate
+
+      - name: Install baseline dependencies
+        run: npm ci
+        working-directory: baseline
+
+      - name: Build baseline
+        run: npm run build
+        working-directory: baseline
+
+      - name: Check frozen-baseline parity
+        run: npm run check:parity -- ../baseline
+        working-directory: candidate
+
+      - name: Upload esbuild architecture report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esbuild-architecture
+          path: |
+            candidate/.build/esbuild-meta.json
+            candidate/.build/esbuild-analysis.txt
+          if-no-files-found: error
