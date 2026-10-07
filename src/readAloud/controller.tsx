@@ -6,7 +6,6 @@ import { render2Mkup } from "../reactHelpers.tsx";
 import * as helpers from "../helpers.ts";
 import { showToggleVisual } from "../toggleIcons.ts";
 import type {
-  ReadAloudAudioTiming,
   ReadAloudBuffer,
   ReadAloudButtons,
   ReadAloudParagraphSpeech,
@@ -28,6 +27,11 @@ import {
   RaMenu,
   RegionProbe
 } from "./views.tsx";
+import {
+  audioTiming,
+  buildMediaSessionTitle,
+  mediaSessionChunkDelay
+} from "./mediaTiming.ts";
 
 const READ_ALOUD_TOGGLE_ICON_SPEC = {
   size: 32,
@@ -1514,41 +1518,8 @@ class ReadAloudModule {
   async __updateMediaSession(plainText: string, wordsPerSecond: number): Promise<void> {
     if (!("mediaSession" in navigator)) return;
 
-    const titleChunks = this.__buildMSTitle(plainText, 60);
+    const titleChunks = buildMediaSessionTitle(plainText, 60);
     await this.__startMSloop(titleChunks, wordsPerSecond);
-  }
-
-  /**
-   * @param {string} plainText - Paragraph text.
-   * @param {number} maxChars - Maximum characters per title chunk.
-   * @returns {readonly string[]} Title chunks.
-   */
-  __buildMSTitle(plainText: string, maxChars: number = 60): readonly string[] {
-    const words = plainText.trim().split(/\s+/).filter(Boolean);
-    if (!words.length) return [""];
-
-    const chunks: string[] = [];
-    let currentChunk = "";
-
-    for (const word of words) {
-      if (!currentChunk) {
-        currentChunk = word;
-        continue;
-      }
-
-      const nextChunk = `${currentChunk} ${word}`;
-      if (nextChunk.length <= maxChars) {
-        currentChunk = nextChunk;
-        continue;
-      }
-
-      chunks.push(currentChunk);
-      currentChunk = word;
-    }
-
-    if (currentChunk) chunks.push(currentChunk);
-
-    return chunks;
   }
 
   /**
@@ -1591,130 +1562,6 @@ class ReadAloudModule {
   }
 
   /**
-   * @param {string} text - Text to count words in.
-   * @returns {number} Word count.
-   */
-  __countWords(text: string): number {
-    const words = text.trim().split(/\s+/).filter(Boolean);
-    return words.length;
-  }
-
-  /**
-   * @returns {number} Estimated read speed in words per second.
-   */
-  __getEstimatedWordsPerSecond(): number {
-    const state = window.readAloudState;
-
-    const baseWordsPerSecondAt1x = 2.6;
-    const effective = baseWordsPerSecondAt1x * state.speechRate;
-
-    return effective > 0 ? effective : baseWordsPerSecondAt1x;
-  }
-
-  /**
-   * @param {ArrayBuffer} audioData - MP3 data.
-   * @returns {Promise<number>} Audio duration in seconds.
-   */
-  async __audioLength(audioData: ArrayBuffer): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
-      const audioBlob = new Blob([audioData], { type: "audio/mp3" });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio();
-
-      let settled = false;
-
-      /**
-       * @returns {void} Nothing.
-       */
-      const cleanup = (): void => {
-        audio.onloadedmetadata = null;
-        audio.onerror = null;
-        audio.src = "";
-        URL.revokeObjectURL(audioUrl);
-      };
-
-      audio.preload = "metadata";
-
-      audio.onloadedmetadata = () => {
-        if (settled) return;
-        settled = true;
-
-        const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-        cleanup();
-
-        if (duration > 0) {
-          resolve(duration);
-          return;
-        }
-
-        reject(new Error("Invalid audio duration"));
-      };
-
-      audio.onerror = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(new Error("Could not read audio duration"));
-      };
-
-      audio.src = audioUrl;
-      audio.load();
-    });
-  }
-
-  /**
-   * @param {string} plainText - Plain text used for synthesis.
-   * @param {ArrayBuffer} audioData - Generated MP3 data.
-   * @returns {Promise<ReadAloudAudioTiming>} Measured timing information.
-   */
-  async __audioTime(plainText: string, audioData: ArrayBuffer): Promise<ReadAloudAudioTiming> {
-    const wordCount = this.__countWords(plainText);
-    const fallbackWordsPerSecond = this.__getEstimatedWordsPerSecond();
-
-    if (wordCount <= 0) {
-      return {
-        wordCount: 0,
-        durationSeconds: 0,
-        wordsPerSecond: fallbackWordsPerSecond
-      };
-    }
-
-    let durationSeconds = wordCount / fallbackWordsPerSecond;
-
-    try {
-      const measuredDuration = await this.__audioLength(audioData);
-      if (Number.isFinite(measuredDuration) && measuredDuration > 0) {
-        durationSeconds = measuredDuration;
-      }
-    } catch {
-      // Fall back to the rate-based estimate.
-    }
-
-    const wordsPerSecond = durationSeconds > 0
-      ? wordCount / durationSeconds
-      : fallbackWordsPerSecond;
-
-    return {
-      wordCount,
-      durationSeconds,
-      wordsPerSecond: wordsPerSecond > 0 ? wordsPerSecond : fallbackWordsPerSecond
-    };
-  }
-
-  /**
-   * @param {string} titleChunk - Title chunk currently being shown.
-   * @param {number} wordsPerSecond - Measured words per second for the paragraph audio.
-   * @returns {number} Delay in milliseconds before the next chunk.
-   */
-  __getMSChunkDelay(titleChunk: string, wordsPerSecond: number): number {
-    const words = this.__countWords(titleChunk);
-    const safeWordsPerSecond = wordsPerSecond > 0 ? wordsPerSecond : this.__getEstimatedWordsPerSecond();
-    const delayMs = Math.round((Math.max(words, 1) / safeWordsPerSecond) * 1000);
-
-    return Math.max(120, delayMs);
-  }
-
-  /**
    * @param {readonly string[]} titleChunks - Title chunks.
    * @param {number} wordsPerSecond - Measured words per second for the paragraph audio.
    * @returns {Promise<void>} Nothing.
@@ -1744,7 +1591,11 @@ class ReadAloudModule {
       chunkIndex += 1;
       if (chunkIndex >= titleChunks.length) return;
 
-      const stepDelayMs = this.__getMSChunkDelay(title, wordsPerSecond);
+      const stepDelayMs = mediaSessionChunkDelay(
+        title,
+        wordsPerSecond,
+        state.speechRate
+      );
 
       state.MSTimer = window.setTimeout(() => {
         void tick();
@@ -1988,7 +1839,11 @@ class ReadAloudModule {
               return;
             }
 
-            const timing = await this.__audioTime(speech.plainText, result.audioData);
+            const timing = await audioTiming(
+              speech.plainText,
+              result.audioData,
+              state.speechRate
+            );
 
             if (!isLive()) {
               this.#reqs.delete(key);
