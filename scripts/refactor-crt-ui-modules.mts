@@ -59,7 +59,7 @@ import {
     setLdReady,
     setLdSize
 } from "./crtUi/loading.ts";
-import type { Ctx, Els, PlotKind, Rt } from "./crtUi/types.ts";
+import type { Cfg, Ctx, Els, PlotKind, Rt } from "./crtUi/types.ts";
 `
 );
 
