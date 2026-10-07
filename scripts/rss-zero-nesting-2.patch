@@ -80,17 +80,17 @@
          const menuBtn = trg.closest<HTMLButtonElement>("[data-rss-author-menu-tgl]");
  
 -        if (menuBtn) {
-+        const root = menuBtn?.closest(".rss-author-filter") ?? null;
-+        if (menuBtn && !(root instanceof HTMLElement)) return;
++        const menuRoot = menuBtn?.closest(".rss-author-filter") ?? null;
++        if (menuBtn && !(menuRoot instanceof HTMLElement)) return;
 +
-+        if (menuBtn && root instanceof HTMLElement) {
++        if (menuBtn && menuRoot instanceof HTMLElement) {
              ev.preventDefault();
              ev.stopPropagation();
 -
 -            const root = menuBtn.closest(".rss-author-filter");
 -            if (!(root instanceof HTMLElement)) return;
 -
-             setAthOpn(root, root.dataset.rssAuthorOpen !== "1");
+             setAthOpn(menuRoot, menuRoot.dataset.rssAuthorOpen !== "1");
              return;
          }
 @@ -4503,11 +4517,9 @@
