@@ -6,7 +6,6 @@ import { CalCtrl, type CalHasArg, type CalSel } from "./calendar.tsx";
 import * as helpers from "./helpers.ts";
 import * as icons from "./icons.tsx";
 import { atchRssComments, initRssComments, mkRssCommentSlug } from "./rssComments.ts";
-import { transpileCodeSource } from "./transpiler.ts";
 import {
     findByPstRef,
     fmtDt,
@@ -39,6 +38,7 @@ import {
     getExternalCodeDirective,
     prepareRssMarkdown
 } from "./rss/markdown.ts";
+import { wireExternalCodeBlocks } from "./rss/externalCode.ts";
 
 declare global {
     namespace JSX {
@@ -59,7 +59,6 @@ import type {
     AthOpt,
     CodeGroupActiveOptions,
     CodeVariant,
-    ExternalCodeDirective,
     FiltRs,
     FiltSumKnd,
     FiltSumPill,
@@ -107,7 +106,6 @@ let pendingRevealPostRefs: readonly string[] = [];
 let pendingRevealJumpId: string | null = null;
 let athMenuOpen = false;
 let rssCodeGroupIx = 0;
-let rssCodeSourceCache = new Map<string, Promise<string>>();
 let activeSegShare: HTMLElement | null = null;
 let lastSegTap: SegTapSnap | null = null;
 let pendingSegReveal: SegRevealReq | null = null;
@@ -341,220 +339,6 @@ function rndrRssMD(markdown: string, seed: string): string {
     const html = applyBlockquoteAccents(marked.parse(prepared));
 
     return applSegShares(html, seed);
-}
-
-/**
- * Fetches source code with a tiny in-page cache.
- * @param {string} sourceUrl
- * @returns {Promise<string>}
- */
-function fetchExternalCodeSource(sourceUrl: string): Promise<string> {
-    const cached = rssCodeSourceCache.get(sourceUrl);
-
-    if (cached) {
-        return cached;
-    }
-
-    const request = fetch(sourceUrl).then(async (rsp) => {
-        if (!rsp.ok) {
-            throw new Error(`External code fetch failed: ${rsp.status} ${rsp.statusText}`);
-        }
-
-        return rsp.text();
-    });
-
-    rssCodeSourceCache.set(sourceUrl, request);
-
-    return request;
-}
-
-/**
- * Removes previous highlight state so hljs can safely run again.
- * @param {HTMLElement} code
- * @returns {void}
- */
-function resetCodeHighlight(code: HTMLElement): void {
-    delete code.dataset.rssHighlighted;
-    code.removeAttribute("data-highlighted");
-}
-
-/**
- * Recalculates the toolbar and post height after external code changes.
- * @param {HTMLElement} pstDiv
- * @param {HTMLElement} code
- * @returns {void}
- */
-function syncExternalCodeLayout(pstDiv: HTMLElement, code: HTMLElement): void {
-    const frame = code.closest(".rss-code-frame");
-
-    if (!(frame instanceof HTMLDivElement)) {
-        qPstHgt(pstDiv);
-        return;
-    }
-
-    updCodeBar(frame, code);
-
-    if (frame.dataset.rssCodeGroup === "1" && code.closest(".rss-code-variant.is-active")) {
-        frame.dataset.language = getCodeLang(code);
-        frame.dataset.rssCodeActiveLang = normCodeLangKey(getCodeLang(code));
-        qCodeGroupLayout(frame);
-    }
-
-    qPstHgt(pstDiv);
-}
-
-/**
- * Sets code text and reruns syntax highlighting.
- * @param {HTMLElement} pstDiv
- * @param {HTMLElement} code
- * @param {string} text
- * @returns {void}
- */
-function setExternalCodeText(pstDiv: HTMLElement, code: HTMLElement, text: string): void {
-    code.textContent = text;
-    resetCodeHighlight(code);
-    hglCode(code);
-    syncExternalCodeLayout(pstDiv, code);
-}
-
-/**
- * Shows an external code failure inside the code block.
- * @param {HTMLElement} pstDiv
- * @param {HTMLElement} code
- * @param {ExternalCodeDirective} directive
- * @param {unknown} err
- * @returns {void}
- */
-function setExternalCodeError(
-    pstDiv: HTMLElement,
-    code: HTMLElement,
-    directive: ExternalCodeDirective,
-    err: unknown
-): void {
-    const msg = err instanceof Error ? err.message : String(err);
-
-    setExternalCodeText(
-        pstDiv,
-        code,
-        [
-            `// Could not load external code from: ${directive.sourceUrl}`,
-            "",
-            `// ${msg}`
-        ].join("\n")
-    );
-}
-
-/**
- * Resolves raw or transpiled text for one external code directive.
- * @param {ExternalCodeDirective} directive
- * @returns {Promise<string>}
- */
-async function resolveExternalCodeText(directive: ExternalCodeDirective): Promise<string> {
-    const source = await fetchExternalCodeSource(directive.sourceUrl);
-
-    if (!directive.transFrom) {
-        return source;
-    }
-
-    return transpileCodeSource(source, directive.transFrom);
-}
-
-/**
- * Finds the element immediately after a directive comment.
- * @param {Comment} comment
- * @returns {Element | null}
- */
-function nextElementAfterComment(comment: Comment): Element | null {
-    let node: ChildNode | null = comment.nextSibling;
-
-    while (node) {
-        if (node instanceof Element) {
-            return node;
-        }
-
-        if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim().length > 0) {
-            return null;
-        }
-
-        node = node.nextSibling;
-    }
-
-    return null;
-}
-
-/**
- * Finds the pre block attached to a directive comment.
- * @param {Comment} comment
- * @returns {HTMLPreElement | null}
- */
-function getDirectivePre(comment: Comment): HTMLPreElement | null {
-    const element = nextElementAfterComment(comment);
-
-    if (element instanceof HTMLPreElement) {
-        return element;
-    }
-
-    const pre = element?.querySelector("pre");
-
-    return pre instanceof HTMLPreElement ? pre : null;
-}
-
-/**
- * Wires one external code directive to its rendered code block.
- * @param {HTMLElement} pstDiv
- * @param {Comment} comment
- * @returns {void}
- */
-function wireExternalCodeComment(pstDiv: HTMLElement, comment: Comment): void {
-    const raw = comment.data.trim();
-
-    if (!raw.startsWith(RSS_CODE_DIRECTIVE_COMMENT_PREFIX)) {
-        return;
-    }
-
-    const id = raw.slice(RSS_CODE_DIRECTIVE_COMMENT_PREFIX.length).trim();
-    const directive = getExternalCodeDirective(id);
-    const pre = getDirectivePre(comment);
-    const code = pre ? getPreCode(pre) : null;
-
-    if (!directive || !code) {
-        return;
-    }
-
-    if (code.dataset.rssExternalCodeWired === "1") {
-        return;
-    }
-
-    code.dataset.rssExternalCodeWired = "1";
-    code.dataset.rssExternalCodeId = directive.id;
-    code.dataset.rssExternalCodeSrc = directive.sourceUrl;
-
-    void resolveExternalCodeText(directive)
-        .then((text) => {
-            setExternalCodeText(pstDiv, code, text);
-        })
-        .catch((err: unknown) => {
-            console.warn("External RSS code source failed:", err);
-            setExternalCodeError(pstDiv, code, directive, err);
-        });
-}
-
-/**
- * Wires every external @code directive inside a rendered post.
- * @param {HTMLElement} pstDiv
- * @returns {void}
- */
-function wireExternalCodeBlocks(pstDiv: HTMLElement): void {
-    const walker = document.createTreeWalker(pstDiv, NodeFilter.SHOW_COMMENT);
-    let node = walker.nextNode();
-
-    while (node) {
-        if (node instanceof Comment) {
-            wireExternalCodeComment(pstDiv, node);
-        }
-
-        node = walker.nextNode();
-    }
 }
 
 /**
@@ -1393,7 +1177,13 @@ function hglCode(code: HTMLElement): void {
  * @returns {void}
  */
 function hglPstCode(pstDiv: HTMLElement): void {
-    wireExternalCodeBlocks(pstDiv);
+    wireExternalCodeBlocks(pstDiv, {
+        getPreCode,
+        highlightCode: hglCode,
+        updateCodeBar: updCodeBar,
+        queueCodeGroupLayout: qCodeGroupLayout,
+        queuePostHeight: qPstHgt
+    });
     grpAdjacentCodeBlocks(pstDiv);
 
     Array.from(pstDiv.querySelectorAll<HTMLElement>("pre code")).forEach((code) => {
