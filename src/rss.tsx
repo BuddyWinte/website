@@ -39,6 +39,10 @@ import {
     prepareRssMarkdown
 } from "./rss/markdown.ts";
 import { wireExternalCodeBlocks } from "./rss/externalCode.ts";
+import {
+    applSegShares,
+    moveCodeSegShareToFrame
+} from "./rss/segments.ts";
 
 declare global {
     namespace JSX {
@@ -74,7 +78,6 @@ import type {
 
 declare const hljs: HljsApi | undefined;
 
-const RSS_SEG_ID_PREFIX = "rss-s-";
 const RSS_RESOURCE_TITLE_PREFIX = "${resource}";
 const RSS_CODE_PREF_STORAGE_KEY = "kittycrow:rss-code-language-preferences:v1";
 const RSS_SEG_DOUBLE_TAP_MS = 420;
@@ -174,158 +177,6 @@ function aplyBlogLyt(): void {
         el.style.maxHeight = "none";
         el.style.overflow = "visible";
     });
-}
-
-/**
- * Hashes a segment fingerprint into a short stable id suffix.
- * @param {string} value
- * @returns {string}
- */
-function hashSegId(value: string): string {
-    let hash = 0x811c9dc5;
-
-    for (let i = 0; i < value.length; i += 1) {
-        hash ^= value.charCodeAt(i);
-        hash = Math.imul(hash, 0x01000193);
-    }
-
-    return (hash >>> 0).toString(16).padStart(8, "0").slice(0, 8);
-}
-
-/**
- * Checks whether an element is a top-level blockquote.
- * @param {HTMLQuoteElement} blockquote
- * @returns {boolean}
- */
-function isTopBQ(blockquote: HTMLQuoteElement): boolean {
-    const parent = blockquote.parentElement;
-
-    return !parent || parent.closest("blockquote") === null;
-}
-
-/**
- * Collects heading and top-level quote share targets.
- * @param {DocumentFragment} root
- * @returns {HTMLElement[]}
- */
-function colSegShareEls(root: DocumentFragment): HTMLElement[] {
-    return Array.from(root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,blockquote"))
-        .filter((el) => {
-            if (el instanceof HTMLQuoteElement) {
-                return isTopBQ(el);
-            }
-
-            return true;
-        });
-}
-
-/**
- * Builds a deterministic short segment id.
- * @param {string} seed
- * @param {HTMLElement} el
- * @param {number} index
- * @param {Set<string>} used
- * @returns {string}
- */
-function mkSegId(seed: string, el: HTMLElement, index: number, used: Set<string>): string {
-    const kind = el.tagName.toLowerCase();
-    const text = (el.textContent ?? "").trim().replace(/\s+/g, " ");
-    let attempt = 0;
-
-    while (true) {
-        const extra = attempt === 0 ? "" : `|${attempt}`;
-        const hash = hashSegId(`${seed}|${kind}|${index}|${text}${extra}`);
-        const id = `${RSS_SEG_ID_PREFIX}${hash}`;
-
-        if (!used.has(id)) {
-            used.add(id);
-            return id;
-        }
-
-        attempt += 1;
-    }
-}
-
-/**
- * Creates one segment share button.
- * @param {string} segId
- * @returns {HTMLButtonElement}
- */
-function mkSegShareBtn(segId: string): HTMLButtonElement {
-    const btn = document.createElement("button");
-
-    btn.type = "button";
-    btn.className = "rss-post-share rss-post-share--segment rss-seg-share kc-round-icon-btn";
-    btn.dataset.rssSegShareBtn = segId;
-    btn.setAttribute("aria-label", "Share this section");
-    btn.title = "Share section";
-    btn.append(render2Frag(icons.MakeShareIcon()));
-
-    return btn;
-}
-
-/**
- * Removes temporary segment metadata from a raw pre element.
- * @param {HTMLPreElement} pre
- * @returns {void}
- */
-function clrPreSegShare(pre: HTMLPreElement): void {
-    pre.removeAttribute("id");
-    delete pre.dataset.rssSegId;
-    delete pre.dataset.rssSegShare;
-}
-
-/**
- * Moves a code segment id from the raw pre to its rendered code frame.
- * @param {HTMLDivElement} frame
- * @param {readonly HTMLPreElement[]} pres
- * @returns {void}
- */
-function moveCodeSegShareToFrame(
-    frame: HTMLDivElement,
-    pres: readonly HTMLPreElement[]
-): void {
-    const segId = pres.find((pre) => pre.dataset.rssSegId)?.dataset.rssSegId;
-
-    pres.forEach((pre) => {
-        clrPreSegShare(pre);
-    });
-
-    if (!segId || frame.dataset.rssSegId) {
-        return;
-    }
-
-    frame.id = segId;
-    frame.dataset.rssSegId = segId;
-    frame.dataset.rssSegShare = "1";
-    frame.appendChild(mkSegShareBtn(segId));
-}
-
-/**
- * Adds deterministic ids and share buttons to headings and top-level blockquotes.
- * @param {string} html
- * @param {string} seed
- * @returns {string}
- */
-function applSegShares(html: string, seed: string): string {
-    const template = document.createElement("template");
-    const used = new Set<string>();
-
-    template.innerHTML = html;
-
-    colSegShareEls(template.content).forEach((el, index) => {
-        const id = mkSegId(seed, el, index, used);
-
-        el.id = id;
-        el.dataset.rssSegId = id;
-        el.dataset.rssSegShare = "1";
-
-        if (!(el instanceof HTMLPreElement)) {
-            el.appendChild(mkSegShareBtn(id));
-        }
-    });
-
-    return template.innerHTML;
 }
 
 /**
