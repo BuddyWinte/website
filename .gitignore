@@ -17,3 +17,5 @@ manifest.json
 host.ts
 # Log files
 *.log
+.build/
+.baseline/
