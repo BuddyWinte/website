@@ -412,27 +412,37 @@ function buildHtml(readerNodes: ReturnType<typeof getReaderNds>): string {
             const pPr = isCleaned ? null : p.getElementsByTagName("w:pPr")[0];
             let style = "";
 
-            if (!isCleaned && pPr) {
-                const styleEl = pPr.getElementsByTagName("w:pStyle")[0];
-                if (styleEl) style = styleEl.getAttribute("w:val") || "";
-            }
+            const styleEl =
+                !isCleaned && pPr
+                    ? pPr.getElementsByTagName("w:pStyle")[0]
+                    : null;
 
-            let tag: "p" | "h1" | "h2" | "blockquote" = "p";
-            let className = "reader-paragraph";
+            if (styleEl) style = styleEl.getAttribute("w:val") || "";
 
-            if (style === "Title") {
-                tag = "h1";
-                className = "reader-title";
-            } else if (style === "Heading1" || style === "Heading2") {
-                tag = "h2";
-                className = "reader-subtitle";
-            } else if (style === "Quote") {
-                tag = "blockquote";
-                className = "reader-quote";
-            } else if (style === "IntenseQuote") {
-                tag = "blockquote";
-                className = "reader-quote reader-intense";
-            }
+            const isTitle = style === "Title";
+            const isHeading = style === "Heading1" || style === "Heading2";
+            const isQuote = style === "Quote";
+            const isIntenseQuote = style === "IntenseQuote";
+
+            const tag: "p" | "h1" | "h2" | "blockquote" =
+                isTitle
+                    ? "h1"
+                    : isHeading
+                        ? "h2"
+                        : isQuote || isIntenseQuote
+                            ? "blockquote"
+                            : "p";
+
+            const className =
+                isTitle
+                    ? "reader-title"
+                    : isHeading
+                        ? "reader-subtitle"
+                        : isIntenseQuote
+                            ? "reader-quote reader-intense"
+                            : isQuote
+                                ? "reader-quote"
+                                : "reader-paragraph";
 
             const runs = isCleaned
                 ? Array.from(p.childNodes)
@@ -772,10 +782,8 @@ function renderPNum(root: Document = document): void {
         const shouldRender = shouldNum(el);
         let num = el.querySelector(":scope > .reader-paragraph-num") as HTMLSpanElement | null;
 
-        if (!shouldRender) {
-            if (num) num.remove();
-            continue;
-        }
+        if (!shouldRender && num) num.remove();
+        if (!shouldRender) continue;
 
         if (!num) {
             num = document.createElement("span");
@@ -1290,11 +1298,11 @@ function bindNavEvents(root: Document = document): void {
     root.querySelectorAll<HTMLInputElement>(".chapter-input").forEach((input) => {
         input.value = String(window.chapter);
         input.addEventListener("keydown", (e: KeyboardEvent) => {
-            if (e.key === "Enter") {
-                const target = e.target as HTMLInputElement;
-                const val = parseInt(target.value, 10);
-                if (val >= 0 && val <= window.lastKnownChapter) jumpTo(val);
-            }
+            if (e.key !== "Enter") return;
+
+            const target = e.target as HTMLInputElement;
+            const val = parseInt(target.value, 10);
+            if (val >= 0 && val <= window.lastKnownChapter) jumpTo(val);
         });
     });
 
@@ -1626,12 +1634,16 @@ async function initReader(): Promise<void> {
     window.lastKnownChapter = chapters.length > 0 ? Math.max(...chapters) : 0;
 
     if (!params.get("chapter")) {
-        const bkm = parseInt(getRCookie(`bookmark_${encodeURIComponent(window.storyPath as unknown as string)}`) as unknown as string);
-        if (bkm && chapters.includes(bkm)) {
-            window.chapter = bkm;
-        } else {
-            window.chapter = 1;
-        }
+        const bkm = parseInt(
+            getRCookie(
+                `bookmark_${encodeURIComponent(window.storyPath as unknown as string)}`
+            ) as unknown as string
+        );
+
+        window.chapter =
+            bkm && chapters.includes(bkm)
+                ? bkm
+                : 1;
     }
 
     await loadCh(window.chapter);
@@ -2050,11 +2062,18 @@ function bootReader(): void {
         const bkms = Array.from(document.querySelectorAll(".reader-bookmark"));
         if (!bkms.length) return;
 
-        if (button.classList.contains("btn-scroll-down")) {
-            const bottomCtrls = document.querySelector(".reader-controls-bottom") as Element | null;
-            if (!bottomCtrls) return;
+        const scrollDown = button.classList.contains("btn-scroll-down");
+        const bottomCtrls = scrollDown
+            ? document.querySelector(".reader-controls-bottom") as Element | null
+            : null;
 
-            bottomCtrls.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (scrollDown && !bottomCtrls) return;
+
+        if (scrollDown && bottomCtrls) {
+            bottomCtrls.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
             return;
         }
 
