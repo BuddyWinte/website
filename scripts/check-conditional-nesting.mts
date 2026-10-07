@@ -49,8 +49,14 @@ function normaliseNode(node: ts.Node, source: ts.SourceFile): string {
     return node.getText(source).replace(/\s+/g, " ").trim();
 }
 
-function fingerprint(node: ts.Node, source: ts.SourceFile): string {
+function fingerprint(
+    file: string,
+    node: ts.Node,
+    source: ts.SourceFile
+): string {
     return createHash("sha256")
+        .update(file.replaceAll("\\", "/"))
+        .update("\0")
         .update(ts.SyntaxKind[node.kind])
         .update("\0")
         .update(normaliseNode(node, source))
@@ -75,7 +81,7 @@ function scan(file: string, content: string): Violation[] {
                 file,
                 line: position.line + 1,
                 kind: ts.SyntaxKind[node.kind],
-                fingerprint: fingerprint(node, source)
+                fingerprint: fingerprint(file, node, source)
             });
         }
 
