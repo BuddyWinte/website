@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { browserEntryNames, browserEntryPoints } from "./build-entries.mts";
+import { browserEntryNames, browserEntryPoints } from "./build-entries.mjs";
 
 const htmlFiles = (await readdir("."))
     .filter((path) => path.endsWith(".html"))
