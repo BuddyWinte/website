@@ -40,6 +40,7 @@ jobs:
         run: |
           git worktree add ../baseline c0c9c0d8b909d26694087d8de9639b397e285b25
           cd ../baseline
+          git submodule update --init --recursive
           npm ci
           npm run build
 
