@@ -28,6 +28,17 @@ import {
     isResourcePth,
     pstsForCurPage
 } from "./rss/routing.ts";
+import {
+    fmtCodeLang,
+    getCodeLang,
+    normCodeLangKey
+} from "./rss/codeLanguage.ts";
+import {
+    applyBlockquoteAccents,
+    CODE_DIRECTIVE_COMMENT_PREFIX as RSS_CODE_DIRECTIVE_COMMENT_PREFIX,
+    getExternalCodeDirective,
+    prepareRssMarkdown
+} from "./rss/markdown.ts";
 
 declare global {
     namespace JSX {
@@ -47,10 +58,8 @@ import type {
     AthMenuRs,
     AthOpt,
     CodeGroupActiveOptions,
-    CodeTranspileLang,
     CodeVariant,
     ExternalCodeDirective,
-    ExternalCodeSpec,
     FiltRs,
     FiltSumKnd,
     FiltSumPill,
@@ -69,11 +78,6 @@ declare const hljs: HljsApi | undefined;
 const RSS_SEG_ID_PREFIX = "rss-s-";
 const RSS_RESOURCE_TITLE_PREFIX = "${resource}";
 const RSS_CODE_PREF_STORAGE_KEY = "kittycrow:rss-code-language-preferences:v1";
-const RSS_CODE_DIRECTIVE_RE = /^[ \t]*@code\[([^\]\r\n]+)\]\(([^)\r\n]+)\)[ \t]*$/gm;
-const RSS_CODE_DIRECTIVE_COMMENT_PREFIX = "rss-code-source:";
-const RSS_BLOCKQUOTE_ACCENT_RE = /^([ \t]{0,3})(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))>[ \t]?/;
-const RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX = "rss-blockquote-accent:";
-const RSS_MARKDOWN_FENCE_RE = /^[ \t]{0,3}(?:```|~~~)/;
 const RSS_SEG_DOUBLE_TAP_MS = 420;
 const RSS_SEG_POINTER_REVEAL_MS = 1800;
 const RSS_SEG_SHARE_SEL = "[data-rss-seg-id]";
@@ -103,8 +107,6 @@ let pendingRevealPostRefs: readonly string[] = [];
 let pendingRevealJumpId: string | null = null;
 let athMenuOpen = false;
 let rssCodeGroupIx = 0;
-let rssCodeDirectiveIx = 0;
-let rssCodeDirectives = new Map<string, ExternalCodeDirective>();
 let rssCodeSourceCache = new Map<string, Promise<string>>();
 let activeSegShare: HTMLElement | null = null;
 let lastSegTap: SegTapSnap | null = null;
@@ -174,359 +176,6 @@ function aplyBlogLyt(): void {
         el.style.maxHeight = "none";
         el.style.overflow = "visible";
     });
-}
-
-/**
- * Normalises equivalent markdown language ids for preference matching.
- * @param {string} lang
- * @returns {string}
- */
-function normCodeLangKey(lang: string): string {
-    const clean = lang.trim().toLowerCase();
-
-    const aliases: Readonly<Record<string, string>> = {
-        javascript: "js",
-        js: "js",
-        node: "js",
-        nodejs: "js",
-        typescript: "ts",
-        ts: "ts",
-        tsx: "tsx",
-        jsx: "jsx",
-        powershell: "powershell",
-        pwsh: "powershell",
-        ps: "powershell",
-        ps1: "powershell",
-        bash: "bash",
-        shell: "bash",
-        sh: "bash",
-        zsh: "bash",
-        py: "python",
-        python: "python"
-    };
-
-    return aliases[clean] ?? clean;
-}
-
-/**
- * Makes the code label less ugly.
- * @param {string} lang
- * @returns {string}
- */
-function fmtCodeLang(lang: string): string {
-    const clean = lang.trim();
-    const key = normCodeLangKey(clean);
-
-    if (clean.length === 0) return "TEXT";
-    if (key === "ts") return "TYPESCRIPT";
-    if (key === "tsx") return "TSX";
-    if (key === "js") return "JAVASCRIPT";
-    if (key === "python") return "PYTHON";
-    if (key === "powershell") return "POWERSHELL";
-    if (key === "bash") return "BASH";
-
-    return clean.toUpperCase();
-}
-
-/**
- * Sniffs lang from cls, messy but fine.
- * @param {HTMLElement} code
- * @returns {string}
- */
-function getCodeLang(code: HTMLElement): string {
-    const cls = Array.from(code.classList).find((name) => {
-        return name.startsWith("language-") || name.startsWith("lang-");
-    });
-
-    const raw = cls?.replace(/^language-/, "").replace(/^lang-/, "").trim();
-
-    return raw && raw.length > 0 ? raw : "text";
-}
-
-/**
- * Checks whether a language can be used as an esbuild transform loader.
- * @param {string} lang
- * @returns {lang is CodeTranspileLang}
- */
-function isCodeTranspileLang(lang: string): lang is CodeTranspileLang {
-    return lang === "js"
-        || lang === "jsx"
-        || lang === "ts"
-        || lang === "tsx";
-}
-
-/**
- * Normalises a trans= value to an esbuild transform loader.
- * @param {string} value
- * @returns {CodeTranspileLang | null}
- */
-function normTranspileLang(value: string): CodeTranspileLang | null {
-    const clean = normCodeLangKey(value);
-
-    return isCodeTranspileLang(clean) ? clean : null;
-}
-
-/**
- * Keeps the visible fenced language simple and safe.
- * @param {string} raw
- * @returns {string}
- */
-function cleanDirectiveLang(raw: string): string {
-    const clean = raw.trim();
-
-    return /^[a-z0-9_#+.-]+$/i.test(clean) ? clean : "text";
-}
-
-/**
- * Reads the @code directive metadata from the square brackets.
- * @param {string} rawSpec
- * @returns {ExternalCodeSpec | null}
- */
-function parseExternalCodeSpec(rawSpec: string): ExternalCodeSpec | null {
-    const parts = rawSpec
-        .trim()
-        .split(/\s+/)
-        .filter((part) => part.length > 0);
-
-    const rawLang = parts[0];
-
-    if (!rawLang) {
-        return null;
-    }
-
-    let transFrom: CodeTranspileLang | null = null;
-
-    parts.slice(1).forEach((part) => {
-        const [rawKey, rawValue] = part.split("=");
-        const key = rawKey?.trim().toLowerCase() ?? "";
-        const value = rawValue?.trim() ?? "";
-
-        if (key !== "trans" || value.length === 0) {
-            return;
-        }
-
-        transFrom = normTranspileLang(value);
-    });
-
-    return {
-        lang: cleanDirectiveLang(rawLang),
-        transFrom
-    };
-}
-
-/**
- * Turns a @code source into a safe fetch URL.
- * @param {string} raw
- * @returns {string | null}
- */
-function normExternalCodeUrl(raw: string): string | null {
-    try {
-        const url = new URL(raw.trim(), window.location.href);
-
-        if (url.protocol !== "http:" && url.protocol !== "https:") {
-            return null;
-        }
-
-        return url.toString();
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Creates the temporary code body for an external source block.
- * @param {ExternalCodeSpec} spec
- * @returns {string}
- */
-function mkExternalCodePlaceholder(spec: ExternalCodeSpec): string {
-    if (spec.transFrom) {
-        return `//transpiling from ${spec.transFrom} source`;
-    }
-
-    return "// loading external code";
-}
-
-/**
- * Registers one external code directive.
- * @param {ExternalCodeSpec} spec
- * @param {string} sourceUrl
- * @returns {ExternalCodeDirective}
- */
-function regExternalCodeDirective(
-    spec: ExternalCodeSpec,
-    sourceUrl: string
-): ExternalCodeDirective {
-    rssCodeDirectiveIx += 1;
-
-    const directive: ExternalCodeDirective = {
-        id: `rss-code-${rssCodeDirectiveIx}`,
-        lang: spec.lang,
-        sourceUrl,
-        transFrom: spec.transFrom,
-        placeholder: mkExternalCodePlaceholder(spec)
-    };
-
-    rssCodeDirectives.set(directive.id, directive);
-
-    return directive;
-}
-
-/**
- * Makes the fenced markdown placeholder for one external code directive.
- * @param {ExternalCodeDirective} directive
- * @returns {string}
- */
-function mkExternalCodeFence(directive: ExternalCodeDirective): string {
-    return [
-        `<!--${RSS_CODE_DIRECTIVE_COMMENT_PREFIX}${directive.id}-->`,
-        `\`\`\`${directive.lang}`,
-        directive.placeholder,
-        "```"
-    ].join("\n");
-}
-
-/**
- * Converts @code[...] directives into normal fenced code blocks before Marked runs.
- * @param {string} markdown
- * @returns {string}
- */
-function prepExternalCodeDirectives(markdown: string): string {
-    return markdown.replace(
-        RSS_CODE_DIRECTIVE_RE,
-        (match: string, rawSpec: string, rawUrl: string): string => {
-            const spec = parseExternalCodeSpec(rawSpec);
-            const sourceUrl = normExternalCodeUrl(rawUrl);
-
-            if (!spec || !sourceUrl) {
-                return match;
-            }
-
-            const directive = regExternalCodeDirective(spec, sourceUrl);
-
-            return mkExternalCodeFence(directive);
-        }
-    );
-}
-
-/**
- * Normalises a custom blockquote accent colour.
- * @param {string} raw
- * @returns {string | null}
- */
-function normBQAcc(raw: string): string | null {
-    const clean = raw.trim();
-
-    return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(clean)
-        ? clean.toUpperCase()
-        : null;
-}
-
-/**
- * Checks whether a markdown line opens or closes a fenced block.
- * @param {string} line
- * @returns {boolean}
- */
-function isMarkdownFenceLine(line: string): boolean {
-    return RSS_MARKDOWN_FENCE_RE.test(line);
-}
-
-/**
- * Converts custom coloured blockquote prefixes into normal markdown blockquotes with markers.
- * @param {string} markdown
- * @returns {string}
- */
-function prepBlQAcc(markdown: string): string {
-    let inFence = false;
-
-    return markdown
-        .split(/(\r?\n)/)
-        .map((line) => {
-            if (line === "\n" || line === "\r\n") {
-                return line;
-            }
-
-            if (isMarkdownFenceLine(line)) {
-                inFence = !inFence;
-                return line;
-            }
-
-            if (inFence) {
-                return line;
-            }
-
-            return line.replace(
-                RSS_BLOCKQUOTE_ACCENT_RE,
-                (match: string, indent: string, rawColour: string): string => {
-                    const colour = normBQAcc(rawColour);
-
-                    if (!colour) {
-                        return match;
-                    }
-
-                    return `${indent}> <!--${RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX}${colour}--> `;
-                }
-            );
-        })
-        .join("");
-}
-
-/**
- * Reads and removes a custom blockquote accent marker.
- * @param {HTMLQuoteElement} blockquote
- * @returns {string | null}
- */
-function readBQAcc(blockquote: HTMLQuoteElement): string | null {
-    const walker = document.createTreeWalker(blockquote, NodeFilter.SHOW_COMMENT);
-    let node = walker.nextNode();
-
-    while (node) {
-        if (!(node instanceof Comment)) {
-            node = walker.nextNode();
-            continue;
-        }
-
-        const raw = node.data.trim();
-        if (!raw.startsWith(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX)) {
-            node = walker.nextNode();
-            continue;
-        }
-
-        const colour = normBQAcc(
-            raw.slice(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX.length)
-        );
-
-        node.remove();
-        return colour;
-    }
-
-    return null;
-}
-
-/**
- * Applies custom blockquote accent colours to rendered HTML.
- * @param {string} html
- * @returns {string}
- */
-function applBQAcc(html: string): string {
-    const template = document.createElement("template");
-
-    template.innerHTML = html;
-
-    Array.from(template.content.querySelectorAll<HTMLQuoteElement>("blockquote")).forEach((blockquote) => {
-        const colour = readBQAcc(blockquote);
-
-        if (!colour) {
-            return;
-        }
-
-        blockquote.style.setProperty("--rss-blockquote-brd", colour);
-        blockquote.style.setProperty(
-            "--rss-blockquote-shadow",
-            `inset 0.65rem 0 1.2rem color-mix(in srgb, ${colour} 14%, transparent)`
-        );
-    });
-
-    return template.innerHTML;
 }
 
 /**
@@ -688,8 +337,8 @@ function applSegShares(html: string, seed: string): string {
  * @returns {string}
  */
 function rndrRssMD(markdown: string, seed: string): string {
-    const prepared = prepExternalCodeDirectives(prepBlQAcc(markdown));
-    const html = applBQAcc(marked.parse(prepared));
+    const prepared = prepareRssMarkdown(markdown);
+    const html = applyBlockquoteAccents(marked.parse(prepared));
 
     return applSegShares(html, seed);
 }
@@ -864,7 +513,7 @@ function wireExternalCodeComment(pstDiv: HTMLElement, comment: Comment): void {
     }
 
     const id = raw.slice(RSS_CODE_DIRECTIVE_COMMENT_PREFIX.length).trim();
-    const directive = rssCodeDirectives.get(id);
+    const directive = getExternalCodeDirective(id);
     const pre = getDirectivePre(comment);
     const code = pre ? getPreCode(pre) : null;
 
