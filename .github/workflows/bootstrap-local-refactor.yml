@@ -1,0 +1,38 @@
+name: Bootstrap local refactor workspace
+
+on:
+  push:
+    branches:
+      - refactor/modular-source
+    paths:
+      - .github/workflows/bootstrap-local-refactor.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Package local workspace
+        run: |
+          tar             --exclude=.git             --exclude=dist             --exclude=site             -czf /tmp/refactor-local-workspace.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refactor-local-workspace
+          path: /tmp/refactor-local-workspace.tar.gz
+          if-no-files-found: error
+          compression-level: 0
