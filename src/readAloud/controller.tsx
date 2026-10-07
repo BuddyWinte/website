@@ -6,6 +6,7 @@ import { render2Mkup } from "../reactHelpers.tsx";
 import * as helpers from "../helpers.ts";
 import { showToggleVisual } from "../toggleIcons.ts";
 import type {
+  ReadAloudAudioTiming,
   ReadAloudBuffer,
   ReadAloudButtons,
   ReadAloudParagraphSpeech,
