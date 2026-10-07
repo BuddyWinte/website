@@ -1,3 +1,6 @@
+import type * as icons from "../icons.tsx";
+import type { closeOnClick } from "../modals.ts";
+
 export type ReaderButtonKey =
     | "toggleParagraphNumbers"
     | "clearBookmark"
