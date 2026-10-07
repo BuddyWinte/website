@@ -27,7 +27,9 @@ import type {
     CalVw,
     DyCalVw,
     DyCell,
+    DyGridItm,
     DyGridVw,
+    DyVw,
     SelInp
 } from "./types.ts";
 
