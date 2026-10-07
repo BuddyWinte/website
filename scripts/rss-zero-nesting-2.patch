@@ -1,0 +1,164 @@
+--- a/src/rss.tsx
++++ b/src/rss.tsx
+@@ -3385,20 +3400,21 @@
+         tgl.click();
+     }
+ 
+-    if (!cnt.classList.contains("content-expanded")) {
+-        const arr = pstDiv.querySelector(".summary-arrow");
++    if (cnt.classList.contains("content-expanded")) {
++        qPstHgt(pstDiv);
++        return;
++    }
+ 
+-        cnt.classList.add("content-expanded");
+-        cnt.classList.remove("content-collapsed");
+-        cnt.style.maxHeight = `${cnt.scrollHeight}px`;
+-        cnt.style.visibility = "visible";
+-        cnt.style.pointerEvents = "auto";
+-        tgl.setAttribute("aria-expanded", "true");
++    const arr = pstDiv.querySelector(".summary-arrow");
+ 
+-        if (arr instanceof HTMLElement) {
+-            arr.textContent = "🔽";
+-        }
+-    }
++    cnt.classList.add("content-expanded");
++    cnt.classList.remove("content-collapsed");
++    cnt.style.maxHeight = `${cnt.scrollHeight}px`;
++    cnt.style.visibility = "visible";
++    cnt.style.pointerEvents = "auto";
++    tgl.setAttribute("aria-expanded", "true");
++
++    if (arr instanceof HTMLElement) arr.textContent = "🔽";
+ 
+     qPstHgt(pstDiv);
+ }
+@@ -4202,16 +4218,15 @@
+ 
+             const shareBtn = trg.closest<HTMLButtonElement>(RSS_SEG_SHARE_BTN_SEL);
+ 
+-            if (shareBtn instanceof HTMLButtonElement) {
+-                ev.preventDefault();
+-                ev.stopPropagation();
++            if (!(shareBtn instanceof HTMLButtonElement)) return;
+ 
+-                const seg = shareBtn.closest<HTMLElement>(RSS_SEG_SHARE_SEL);
++            ev.preventDefault();
++            ev.stopPropagation();
+ 
+-                if (seg instanceof HTMLElement) {
+-                    shareSegUrl(seg);
+-                }
+-            }
++            const seg = shareBtn.closest<HTMLElement>(RSS_SEG_SHARE_SEL);
++            if (!(seg instanceof HTMLElement)) return;
++
++            shareSegUrl(seg);
+         },
+         true
+     );
+@@ -4354,12 +4369,12 @@
+     const host = ensFiltShell(cal);
+     const found = document.getElementById("kc-blog-author-filter");
+ 
+-    if (found instanceof HTMLDivElement) {
+-        if (!host.contains(found)) host.appendChild(found);
+-
+-        return found;
++    if (found instanceof HTMLDivElement && !host.contains(found)) {
++        host.appendChild(found);
+     }
+ 
++    if (found instanceof HTMLDivElement) return found;
++
+     const slot = document.createElement("div");
+ 
+     slot.id = "kc-blog-author-filter";
+@@ -4483,13 +4498,12 @@
+ 
+         const menuBtn = trg.closest<HTMLButtonElement>("[data-rss-author-menu-tgl]");
+ 
+-        if (menuBtn) {
++        const root = menuBtn?.closest(".rss-author-filter") ?? null;
++        if (menuBtn && !(root instanceof HTMLElement)) return;
++
++        if (menuBtn && root instanceof HTMLElement) {
+             ev.preventDefault();
+             ev.stopPropagation();
+-
+-            const root = menuBtn.closest(".rss-author-filter");
+-            if (!(root instanceof HTMLElement)) return;
+-
+             setAthOpn(root, root.dataset.rssAuthorOpen !== "1");
+             return;
+         }
+@@ -4503,11 +4517,9 @@
+             const aths = pstAths(datePsts(allPsts, curCalSel));
+             const act = allBtn.dataset.rssAuthorAct;
+ 
+-            if (act === "clr") {
+-                unselAths(aths);
+-            } else {
+-                selAths(aths);
+-            }
++            act === "clr"
++                ? unselAths(aths)
++                : selAths(aths);
+ 
+             rndAthFilt(slot, allPsts, curCalSel);
+             rndBlog(box, allPsts, curCalSel, authorOff);
+@@ -4516,22 +4528,18 @@
+         }
+ 
+         const btn = trg.closest<HTMLButtonElement>("[data-rss-author]");
++        if (!(btn instanceof HTMLButtonElement)) return;
+ 
+-        if (btn instanceof HTMLButtonElement) {
+-            const ath = btn.dataset.rssAuthor;
+-            if (!ath) return;
+-
+-            if (authorOff.has(ath)) {
+-                authorOff.delete(ath);
+-            } else {
+-                authorOff.add(ath);
+-            }
++        const ath = btn.dataset.rssAuthor;
++        if (!ath) return;
+ 
+-            rndAthFilt(slot, allPsts, curCalSel);
+-            rndBlog(box, allPsts, curCalSel, authorOff);
+-            syncCurFiltSum();
+-            return;
+-        }
++        authorOff.has(ath)
++            ? authorOff.delete(ath)
++            : authorOff.add(ath);
++
++        rndAthFilt(slot, allPsts, curCalSel);
++        rndBlog(box, allPsts, curCalSel, authorOff);
++        syncCurFiltSum();
+ 
+         const hdr = trg.closest<HTMLElement>("[data-rss-author-menu-hdr]");
+         if (!hdr) return;
+@@ -4845,15 +4853,13 @@
+             return;
+         }
+ 
+-        if (cal instanceof HTMLDivElement) {
+-            mntCal(cal, box, allPsts);
++        const hasCalendar = cal instanceof HTMLDivElement;
+ 
+-            if (requestedPosts.length > 0) {
+-                rndTgtsCal(box, cal, allPsts, requestedPosts, requestedJumpId);
+-            }
+-
+-            return;
++        if (hasCalendar) mntCal(cal, box, allPsts);
++        if (hasCalendar && requestedPosts.length > 0) {
++            rndTgtsCal(box, cal, allPsts, requestedPosts, requestedJumpId);
+         }
++        if (hasCalendar) return;
+ 
+         if (isBlogPth()) {
+             rndBlog(box, allPsts, curCalSel, authorOff);
