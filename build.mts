@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import * as esbuild from "esbuild";
 import * as config from "./src/config.js";
-import { browserEntryPoints } from "./scripts/build-entries.mts";
+import { browserEntryPoints } from "./scripts/build-entries.mjs";
 
 interface BuildManifest {
     version: 1;
@@ -31,6 +31,54 @@ const remoteManifestTimeoutMs = 5000;
 const require = createRequire(import.meta.url);
 
 /**
+ * @returns {Promise<void>}
+ */
+async function loadOptionalDotenv(): Promise<void> {
+    try {
+        await import("dotenv/config");
+    } catch {
+        // Ignore missing dotenv. Cloudflare can provide env vars directly.
+    }
+}
+
+/**
+ * @param {string} filePath
+ * @returns {string}
+ */
+function norm(filePath: string): string {
+    return filePath.replaceAll("\\", "/");
+}
+
+/**
+ * @param {string} dir
+ * @returns {Promise<string[]>}
+ */
+async function walk(dir: string): Promise<string[]> {
+    const entries = await readdir(dir, { withFileTypes: true });
+
+    const nested = await Promise.all(
+        entries.map(async (entry): Promise<string[]> => {
+            const fullPath = join(dir, entry.name);
+            return entry.isDirectory() ? walk(fullPath) : [fullPath];
+        })
+    );
+
+    return nested.flat();
+}
+
+/**
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function isTrackedSourceFile(filePath: string): boolean {
+    const file = norm(filePath);
+
+    if (!file.startsWith("src/")) return false;
+
+    return file.endsWith(".ts") || file.endsWith(".tsx");
+}
+
+/**
  * @returns {Promise<string[]>}
  */
 async function getSourceFiles(): Promise<string[]> {
@@ -54,7 +102,10 @@ function getEntries(sourceFiles: string[]): BuildEntryPoints {
         .filter((filePath) => !available.has(filePath));
 
     if (missing.length > 0) {
-        throw new Error("Configured entry points do not exist: " + quoteList(missing));
+        throw new Error(
+            "Configured entry points do not exist: " +
+            quoteList(missing)
+        );
     }
 
     return browserEntryPoints;
