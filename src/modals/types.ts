@@ -83,3 +83,9 @@ export type OpenRec = Readonly<{
     stackEl: HTMLDivElement;
 }>;
 
+
+
+export type ModalFactorySessionHost = Readonly<{
+    _keyFor: (id: string) => string;
+    _unregisterSession: (id: string) => void;
+}>;
