@@ -2,6 +2,8 @@ import { render2Frag } from "../reactHelpers.tsx";
 import * as icons from "../icons.tsx";
 import { moLbl } from "./model.ts";
 import type {
+    CalLvl,
+    CalSct,
     CalSel,
     CalVw,
     DyCalVw,
