@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import * as esbuild from "esbuild";
 import * as config from "./src/config.js";
+import { browserEntryPoints } from "./scripts/build-entries.mts";
 
 interface BuildManifest {
     version: 1;
@@ -30,67 +31,6 @@ const remoteManifestTimeoutMs = 5000;
 const require = createRequire(import.meta.url);
 
 /**
- * @returns {Promise<void>}
- */
-async function loadOptionalDotenv(): Promise<void> {
-    try {
-        await import("dotenv/config");
-    } catch {
-        // Ignore missing dotenv. Cloudflare can provide env vars directly.
-    }
-}
-
-/**
- * @param {string} filePath
- * @returns {string}
- */
-function norm(filePath: string): string {
-    return filePath.replaceAll("\\", "/");
-}
-
-/**
- * @param {string} dir
- * @returns {Promise<string[]>}
- */
-async function walk(dir: string): Promise<string[]> {
-    const entries = await readdir(dir, { withFileTypes: true });
-
-    const nested = await Promise.all(
-        entries.map(async (entry): Promise<string[]> => {
-            const fullPath = join(dir, entry.name);
-            return entry.isDirectory() ? walk(fullPath) : [fullPath];
-        })
-    );
-
-    return nested.flat();
-}
-
-/**
- * @param {string} filePath
- * @returns {boolean}
- */
-function isTrackedSourceFile(filePath: string): boolean {
-    const file = norm(filePath);
-
-    if (!file.startsWith("src/")) return false;
-
-    return file.endsWith(".ts") || file.endsWith(".tsx");
-}
-
-/**
- * @param {string} filePath
- * @returns {boolean}
- */
-function isEntry(filePath: string): boolean {
-    const file = norm(filePath);
-
-    if (!isTrackedSourceFile(file)) return false;
-    if (file.endsWith(".d.ts")) return false;
-
-    return true;
-}
-
-/**
  * @returns {Promise<string[]>}
  */
 async function getSourceFiles(): Promise<string[]> {
@@ -98,12 +38,26 @@ async function getSourceFiles(): Promise<string[]> {
     return allFiles.filter(isTrackedSourceFile).sort((left, right) => left.localeCompare(right));
 }
 
+type BuildEntryPoints = Readonly<Record<string, string>>;
+
 /**
+ * Resolves the deliberately public browser/package entry surface.
+ *
+ * Implementation modules are dependencies, not independent applications.
  * @param {string[]} sourceFiles
- * @returns {string[]}
+ * @returns {BuildEntryPoints}
  */
-function getEntries(sourceFiles: string[]): string[] {
-    return sourceFiles.filter(isEntry).sort((left, right) => left.localeCompare(right));
+function getEntries(sourceFiles: string[]): BuildEntryPoints {
+    const available = new Set(sourceFiles.map(norm));
+    const missing = Object.values(browserEntryPoints)
+        .map(norm)
+        .filter((filePath) => !available.has(filePath));
+
+    if (missing.length > 0) {
+        throw new Error("Configured entry points do not exist: " + quoteList(missing));
+    }
+
+    return browserEntryPoints;
 }
 
 /**
@@ -332,11 +286,11 @@ function runTypecheck(): void {
 }
 
 /**
- * @param {string[]} entryPoints
+ * @param {BuildEntryPoints} entryPoints
  * @returns {Promise<void>}
  */
-async function runBuild(entryPoints: string[]): Promise<void> {
-    await esbuild.build({
+async function runBuild(entryPoints: BuildEntryPoints): Promise<void> {
+    const result = await esbuild.build({
         entryPoints,
         outdir: "dist",
         outbase: "src",
@@ -352,8 +306,28 @@ async function runBuild(entryPoints: string[]): Promise<void> {
         loader: {
             ".wasm": "file"
         },
-        logLevel: "info"
+        logLevel: "info",
+        metafile: true
     });
+
+    await mkdir(".build", { recursive: true });
+
+    await writeFile(
+        ".build/esbuild-meta.json",
+        JSON.stringify(result.metafile, null, 2) + "\n",
+        "utf8"
+    );
+
+    const analysis = await esbuild.analyzeMetafile(
+        result.metafile,
+        { verbose: true }
+    );
+
+    await writeFile(
+        ".build/esbuild-analysis.txt",
+        analysis + "\n",
+        "utf8"
+    );
 }
 
 /**
@@ -410,8 +384,8 @@ async function main(): Promise<void> {
     const sourceFiles = await getSourceFiles();
     const entryPoints = getEntries(sourceFiles);
 
-    if (entryPoints.length === 0) {
-        throw new Error("No entry points found under src.");
+    if (Object.keys(entryPoints).length === 0) {
+        throw new Error("No entry points configured.");
     }
 
     const trackedFiles = getTrackedFiles(sourceFiles);
@@ -445,7 +419,7 @@ async function main(): Promise<void> {
     console.log("[build] Running typecheck.");
     runTypecheck();
 
-    console.log(`[build] Building ${String(entryPoints.length)} entry points with esbuild.`);
+    console.log(`[build] Building ${String(Object.keys(entryPoints).length)} intentional entry points with esbuild.`);
     await runBuild(entryPoints);
 
     await writeLocalManifest(currentManifest);
