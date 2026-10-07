@@ -789,10 +789,12 @@ class ReadAloudModule {
 
     const ssmlRaw = parsed["ssml"];
     const ssml = typeof ssmlRaw === "string" ? ssmlRaw.trim() : "";
-    if (ssml) {
-      if (this.__isUnsafeInlineSsml(ssml)) return { kind: "text", value: trimmed };
-      return { kind: "ssml", value: ssml };
+
+    if (ssml && this.__isUnsafeInlineSsml(ssml)) {
+      return { kind: "text", value: trimmed };
     }
+
+    if (ssml) return { kind: "ssml", value: ssml };
 
     const textRaw = parsed["text"];
     const text = typeof textRaw === "string" ? textRaw.trim() : "";
@@ -1066,13 +1068,17 @@ class ReadAloudModule {
     window.readAloudState.pressed = true;
 
     const toggleBtn = helpers.getEl("read-aloud-toggle");
+
+    if (toggleBtn instanceof HTMLButtonElement) {
+      void showToggleVisual(
+        toggleBtn,
+        "disable",
+        READ_ALOUD_TOGGLE_ICON_SPEC
+      );
+    }
+
     if (toggleBtn) {
       toggleBtn.classList.add("active");
-
-      if (toggleBtn instanceof HTMLButtonElement) {
-        void showToggleVisual(toggleBtn, "disable", READ_ALOUD_TOGGLE_ICON_SPEC);
-      }
-
       toggleBtn.removeEventListener("click", this.#boundShowMenu);
       toggleBtn.addEventListener("click", this.#boundCloseMenu);
     }
@@ -1526,17 +1532,22 @@ class ReadAloudModule {
       window.readAloudState.originalMenuDisplay = menu.style.display || computed || "flex";
     }
 
-    if (window.readAloudState.menuVisible) {
+    const hidingMenu = window.readAloudState.menuVisible;
+
+    if (hidingMenu && toggleBtn instanceof HTMLButtonElement) {
+      void showToggleVisual(
+        toggleBtn,
+        "enable",
+        READ_ALOUD_TOGGLE_ICON_SPEC
+      );
+    }
+
+    if (hidingMenu) {
       menu.style.display = "none";
       window.readAloudState.menuVisible = false;
 
       toggleBtn.classList.remove("active");
       toggleBtn.classList.add("menu-eye");
-
-      if (toggleBtn instanceof HTMLButtonElement) {
-        void showToggleVisual(toggleBtn, "enable", READ_ALOUD_TOGGLE_ICON_SPEC);
-      }
-
       toggleBtn.removeEventListener("click", this.#boundCloseMenu);
       toggleBtn.addEventListener("click", this.#boundMenuVis);
       return;
@@ -1583,13 +1594,17 @@ class ReadAloudModule {
     if (!menu) return;
 
     const toggleBtn = helpers.getEl("read-aloud-toggle");
+
+    if (toggleBtn instanceof HTMLButtonElement) {
+      void showToggleVisual(
+        toggleBtn,
+        "enable",
+        READ_ALOUD_TOGGLE_ICON_SPEC
+      );
+    }
+
     if (toggleBtn) {
       toggleBtn.classList.remove("active");
-
-      if (toggleBtn instanceof HTMLButtonElement) {
-        void showToggleVisual(toggleBtn, "enable", READ_ALOUD_TOGGLE_ICON_SPEC);
-      }
-
       toggleBtn.removeEventListener("click", this.#boundCloseMenu);
       toggleBtn.addEventListener("click", this.#boundShowMenu);
     }
@@ -1664,10 +1679,11 @@ class ReadAloudModule {
    * @returns {number} Starting index.
    */
   __startIndex(paragraphs: readonly HTMLElement[], startFromId: string | null): number {
-    if (startFromId) {
-      const idx = paragraphs.findIndex((p) => p.id === startFromId);
-      if (idx >= 0) return idx;
-    }
+    const requestedIndex = startFromId
+      ? paragraphs.findIndex((p) => p.id === startFromId)
+      : -1;
+
+    if (requestedIndex >= 0) return requestedIndex;
 
     const saved = localStorage.getItem("readAloudAudioPosition");
     if (!saved) return 0;
@@ -1681,11 +1697,16 @@ class ReadAloudModule {
 
     if (!helpers.isRecord(savedObjUnknown)) return 0;
 
-    const paragraphId = typeof savedObjUnknown.paragraphId === "string" ? savedObjUnknown.paragraphId : null;
-    if (paragraphId) {
-      const idxSaved = paragraphs.findIndex((p) => p.id === paragraphId);
-      if (idxSaved >= 0) return idxSaved;
-    }
+    const paragraphId =
+      typeof savedObjUnknown.paragraphId === "string"
+        ? savedObjUnknown.paragraphId
+        : null;
+
+    const savedIndex = paragraphId
+      ? paragraphs.findIndex((p) => p.id === paragraphId)
+      : -1;
+
+    if (savedIndex >= 0) return savedIndex;
 
     const paragraphIndex = typeof savedObjUnknown.paragraphIndex === "number" ? savedObjUnknown.paragraphIndex : -1;
     if (paragraphIndex >= 0 && paragraphIndex < paragraphs.length) return paragraphIndex;
@@ -1716,8 +1737,13 @@ class ReadAloudModule {
     this.__scrollToP(paragraph);
 
     const plainText = this.__paragPlain(paragraph);
+    const playbackChanged =
+      state.playbackToken !== playbackToken ||
+      state.paused;
+
+    if (!plainText && playbackChanged) return;
+
     if (!plainText) {
-      if (state.playbackToken !== playbackToken || state.paused) return;
       await this.__speakP(idx + 1);
       return;
     }
