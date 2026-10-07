@@ -1,0 +1,56 @@
+name: Apply RSS zero nesting
+
+on:
+  push:
+    branches:
+      - refactor/modular-source
+    paths:
+      - scripts/rss-zero-nesting-1.patch
+      - scripts/rss-zero-nesting-2.patch
+      - .github/workflows/apply-rss-zero-nesting.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply RSS patches
+        run: |
+          git apply scripts/rss-zero-nesting-1.patch
+          git apply scripts/rss-zero-nesting-2.patch
+
+      - name: Validate candidate
+        run: npm run validate
+
+      - name: Build frozen baseline
+        run: |
+          git worktree add ../baseline c0c9c0d8b909d26694087d8de9639b397e285b25
+          cd ../baseline
+          npm ci
+          npm run build
+
+      - name: Check frozen-baseline parity
+        run: npm run check:parity -- ../baseline
+
+      - name: Commit validated RSS control-flow refactor
+        run: |
+          git config user.name "kitty"
+          git config user.email "141717449+kitty-crow@users.noreply.github.com"
+          git add src/rss.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor: eliminate remaining nested conditionals"
+          git push origin HEAD:refactor/modular-source
