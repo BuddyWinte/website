@@ -620,21 +620,23 @@ function readBQAcc(blockquote: HTMLQuoteElement): string | null {
     let node = walker.nextNode();
 
     while (node) {
-        if (node instanceof Comment) {
-            const raw = node.data.trim();
-
-            if (raw.startsWith(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX)) {
-                const colour = normBQAcc(
-                    raw.slice(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX.length)
-                );
-
-                node.remove();
-
-                return colour;
-            }
+        if (!(node instanceof Comment)) {
+            node = walker.nextNode();
+            continue;
         }
 
-        node = walker.nextNode();
+        const raw = node.data.trim();
+        if (!raw.startsWith(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX)) {
+            node = walker.nextNode();
+            continue;
+        }
+
+        const colour = normBQAcc(
+            raw.slice(RSS_BLOCKQUOTE_ACCENT_COMMENT_PREFIX.length)
+        );
+
+        node.remove();
+        return colour;
     }
 
     return null;
@@ -876,14 +878,17 @@ function resetCodeHighlight(code: HTMLElement): void {
 function syncExternalCodeLayout(pstDiv: HTMLElement, code: HTMLElement): void {
     const frame = code.closest(".rss-code-frame");
 
-    if (frame instanceof HTMLDivElement) {
-        updCodeBar(frame, code);
+    if (!(frame instanceof HTMLDivElement)) {
+        qPstHgt(pstDiv);
+        return;
+    }
 
-        if (frame.dataset.rssCodeGroup === "1" && code.closest(".rss-code-variant.is-active")) {
-            frame.dataset.language = getCodeLang(code);
-            frame.dataset.rssCodeActiveLang = normCodeLangKey(getCodeLang(code));
-            qCodeGroupLayout(frame);
-        }
+    updCodeBar(frame, code);
+
+    if (frame.dataset.rssCodeGroup === "1" && code.closest(".rss-code-variant.is-active")) {
+        frame.dataset.language = getCodeLang(code);
+        frame.dataset.rssCodeActiveLang = normCodeLangKey(getCodeLang(code));
+        qCodeGroupLayout(frame);
     }
 
     qPstHgt(pstDiv);
@@ -2385,11 +2390,11 @@ function repaintFiltersAndBlog(): void {
 function hdlSumPillClick(pill: HTMLElement): void {
     const kind = pill.dataset.rssFilterSummaryKind as FiltSumKnd | undefined;
 
-    if (kind === "author") {
-        const ath = pill.dataset.rssFilterSummaryAuthor;
-        if (!ath) return;
+    const ath = pill.dataset.rssFilterSummaryAuthor;
+    if (kind === "author" && !ath) return;
 
-        authorOff.add(ath);
+    if (kind === "author") {
+        authorOff.add(ath as string);
         repaintFiltersAndBlog();
         return;
     }
@@ -2638,16 +2643,18 @@ function wireFilt(shell: HTMLDivElement): void {
 function ensFiltShell(cal: HTMLDivElement): HTMLDivElement {
     const current = cal.closest(".rss-filters");
 
-    if (current instanceof HTMLDivElement) {
-        const inner = current.querySelector(".rss-filters__body-inner");
+    const existingInner = current instanceof HTMLDivElement
+        ? current.querySelector(".rss-filters__body-inner")
+        : null;
 
-        if (inner instanceof HTMLDivElement) {
-            if (!inner.contains(cal)) inner.prepend(cal);
+    if (existingInner instanceof HTMLDivElement && !existingInner.contains(cal)) {
+        existingInner.prepend(cal);
+    }
 
-            wireFilt(current);
-            syncFiltSum(current);
-            return inner;
-        }
+    if (current instanceof HTMLDivElement && existingInner instanceof HTMLDivElement) {
+        wireFilt(current);
+        syncFiltSum(current);
+        return existingInner;
     }
 
     const parent = cal.parentElement;
@@ -2717,14 +2724,29 @@ function ensCalSlot(): HTMLDivElement | null {
  * Finds/makes the blog shell, fragile-ish.
  * @returns {WrapRs | null}
  */
-function ensBlogWrap(): WrapRs | null {
-    if (isDirectRssPth()) {
-        const box = document.querySelector(".blog-container");
-        if (!(box instanceof HTMLDivElement)) return null;
+function cleanExistingBlogContainers(
+    wrap: HTMLElement,
+    scroll: HTMLDivElement
+): void {
+    for (const child of Array.from(wrap.children)) {
+        if (child === scroll) continue;
+        if (!child.classList.contains("blog-container")) continue;
+        wrap.removeChild(child);
+    }
+}
 
+function ensBlogWrap(): WrapRs | null {
+    const direct = isDirectRssPth();
+    const directBox = direct
+        ? document.querySelector(".blog-container")
+        : null;
+
+    if (direct && !(directBox instanceof HTMLDivElement)) return null;
+
+    if (direct && directBox instanceof HTMLDivElement) {
         return {
             scr: null,
-            box,
+            box: directBox,
             cal: isBlogPth() ? ensCalSlot() : null
         };
     }
@@ -2747,19 +2769,12 @@ function ensBlogWrap(): WrapRs | null {
         nxt.appendChild(box);
         scr = nxt;
 
-        Array.from(wrap.children).forEach((chd) => {
-            if (chd === scr) return;
-            if (!(chd instanceof Element)) return;
-            if (!chd.classList.contains("blog-container")) return;
-
-            wrap.removeChild(chd);
-        });
+        cleanExistingBlogContainers(wrap, nxt);
 
         const hdr = wrap.querySelector(".comments-header");
         const aft = hdr?.nextSibling ?? null;
 
-        if (aft) wrap.insertBefore(scr, aft);
-        else wrap.appendChild(scr);
+        aft ? wrap.insertBefore(nxt, aft) : wrap.appendChild(nxt);
     }
 
     if (!scr.contains(box)) scr.appendChild(box);
@@ -3385,20 +3400,21 @@ function opnPstEl(pstDiv: HTMLElement): void {
         tgl.click();
     }
 
-    if (!cnt.classList.contains("content-expanded")) {
-        const arr = pstDiv.querySelector(".summary-arrow");
-
-        cnt.classList.add("content-expanded");
-        cnt.classList.remove("content-collapsed");
-        cnt.style.maxHeight = `${cnt.scrollHeight}px`;
-        cnt.style.visibility = "visible";
-        cnt.style.pointerEvents = "auto";
-        tgl.setAttribute("aria-expanded", "true");
-
-        if (arr instanceof HTMLElement) {
-            arr.textContent = "🔽";
-        }
+    if (cnt.classList.contains("content-expanded")) {
+        qPstHgt(pstDiv);
+        return;
     }
+
+    const arr = pstDiv.querySelector(".summary-arrow");
+
+    cnt.classList.add("content-expanded");
+    cnt.classList.remove("content-collapsed");
+    cnt.style.maxHeight = `${cnt.scrollHeight}px`;
+    cnt.style.visibility = "visible";
+    cnt.style.pointerEvents = "auto";
+    tgl.setAttribute("aria-expanded", "true");
+
+    if (arr instanceof HTMLElement) arr.textContent = "🔽";
 
     qPstHgt(pstDiv);
 }
@@ -4202,16 +4218,15 @@ function wireSegShares(pstDiv: HTMLElement): void {
 
             const shareBtn = trg.closest<HTMLButtonElement>(RSS_SEG_SHARE_BTN_SEL);
 
-            if (shareBtn instanceof HTMLButtonElement) {
-                ev.preventDefault();
-                ev.stopPropagation();
+            if (!(shareBtn instanceof HTMLButtonElement)) return;
 
-                const seg = shareBtn.closest<HTMLElement>(RSS_SEG_SHARE_SEL);
+            ev.preventDefault();
+            ev.stopPropagation();
 
-                if (seg instanceof HTMLElement) {
-                    shareSegUrl(seg);
-                }
-            }
+            const seg = shareBtn.closest<HTMLElement>(RSS_SEG_SHARE_SEL);
+            if (!(seg instanceof HTMLElement)) return;
+
+            shareSegUrl(seg);
         },
         true
     );
@@ -4354,11 +4369,11 @@ function ensAthSlot(cal: HTMLDivElement): HTMLDivElement {
     const host = ensFiltShell(cal);
     const found = document.getElementById("kc-blog-author-filter");
 
-    if (found instanceof HTMLDivElement) {
-        if (!host.contains(found)) host.appendChild(found);
-
-        return found;
+    if (found instanceof HTMLDivElement && !host.contains(found)) {
+        host.appendChild(found);
     }
+
+    if (found instanceof HTMLDivElement) return found;
 
     const slot = document.createElement("div");
 
@@ -4483,14 +4498,13 @@ function wireAthFilt(slot: HTMLDivElement, box: HTMLDivElement): void {
 
         const menuBtn = trg.closest<HTMLButtonElement>("[data-rss-author-menu-tgl]");
 
-        if (menuBtn) {
+        const menuRoot = menuBtn?.closest(".rss-author-filter") ?? null;
+        if (menuBtn && !(menuRoot instanceof HTMLElement)) return;
+
+        if (menuBtn && menuRoot instanceof HTMLElement) {
             ev.preventDefault();
             ev.stopPropagation();
-
-            const root = menuBtn.closest(".rss-author-filter");
-            if (!(root instanceof HTMLElement)) return;
-
-            setAthOpn(root, root.dataset.rssAuthorOpen !== "1");
+            setAthOpn(menuRoot, menuRoot.dataset.rssAuthorOpen !== "1");
             return;
         }
 
@@ -4503,11 +4517,9 @@ function wireAthFilt(slot: HTMLDivElement, box: HTMLDivElement): void {
             const aths = pstAths(datePsts(allPsts, curCalSel));
             const act = allBtn.dataset.rssAuthorAct;
 
-            if (act === "clr") {
-                unselAths(aths);
-            } else {
-                selAths(aths);
-            }
+            act === "clr"
+                ? unselAths(aths)
+                : selAths(aths);
 
             rndAthFilt(slot, allPsts, curCalSel);
             rndBlog(box, allPsts, curCalSel, authorOff);
@@ -4516,22 +4528,18 @@ function wireAthFilt(slot: HTMLDivElement, box: HTMLDivElement): void {
         }
 
         const btn = trg.closest<HTMLButtonElement>("[data-rss-author]");
+        if (!(btn instanceof HTMLButtonElement)) return;
 
-        if (btn instanceof HTMLButtonElement) {
-            const ath = btn.dataset.rssAuthor;
-            if (!ath) return;
+        const ath = btn.dataset.rssAuthor;
+        if (!ath) return;
 
-            if (authorOff.has(ath)) {
-                authorOff.delete(ath);
-            } else {
-                authorOff.add(ath);
-            }
+        authorOff.has(ath)
+            ? authorOff.delete(ath)
+            : authorOff.add(ath);
 
-            rndAthFilt(slot, allPsts, curCalSel);
-            rndBlog(box, allPsts, curCalSel, authorOff);
-            syncCurFiltSum();
-            return;
-        }
+        rndAthFilt(slot, allPsts, curCalSel);
+        rndBlog(box, allPsts, curCalSel, authorOff);
+        syncCurFiltSum();
 
         const hdr = trg.closest<HTMLElement>("[data-rss-author-menu-hdr]");
         if (!hdr) return;
@@ -4845,15 +4853,13 @@ async function loadBlog(): Promise<void> {
             return;
         }
 
-        if (cal instanceof HTMLDivElement) {
-            mntCal(cal, box, allPsts);
+        const hasCalendar = cal instanceof HTMLDivElement;
 
-            if (requestedPosts.length > 0) {
-                rndTgtsCal(box, cal, allPsts, requestedPosts, requestedJumpId);
-            }
-
-            return;
+        if (hasCalendar) mntCal(cal, box, allPsts);
+        if (hasCalendar && requestedPosts.length > 0) {
+            rndTgtsCal(box, cal, allPsts, requestedPosts, requestedJumpId);
         }
+        if (hasCalendar) return;
 
         if (isBlogPth()) {
             rndBlog(box, allPsts, curCalSel, authorOff);
