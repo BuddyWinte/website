@@ -96,7 +96,7 @@
  
 -            wireFilt(current);
 -            syncFiltSum(current);
--            return existingInner;
+-            return inner;
 -        }
 +    if (current instanceof HTMLDivElement && existingInner instanceof HTMLDivElement) {
 +        wireFilt(current);
