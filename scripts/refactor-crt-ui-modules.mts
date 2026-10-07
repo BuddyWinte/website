@@ -1,4 +1,5 @@
-// One-shot validated CRT UI extraction for the refactor branch.\nimport { readFile, writeFile } from "node:fs/promises";
+// One-shot validated CRT UI extraction for the refactor branch.
+import { readFile, writeFile } from "node:fs/promises";
 
 const path = "src/crtUi.tsx";
 let source = await readFile(path, "utf8");
